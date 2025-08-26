@@ -31,12 +31,14 @@ namespace display_device {
         return false;
       }
 
-      UINT32 flags {SDC_APPLY | SDC_TOPOLOGY_SUPPLIED | SDC_ALLOW_PATH_ORDER_CHANGES | SDC_VIRTUAL_MODE_AWARE};
+      // First try: Use supplied display config with no optimization, allowing minimal changes, and save to DB.
+      UINT32 flags {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE | SDC_NO_OPTIMIZATION | SDC_ALLOW_CHANGES | SDC_VIRTUAL_MODE_AWARE};
       LONG result {w_api.setDisplayConfig(paths, {}, flags)};
       if (result == ERROR_GEN_FAILURE) {
-        DD_LOG(warning) << w_api.getErrorString(result) << " failed to change topology using the topology from Windows DB! Asking Windows to create the topology.";
+        DD_LOG(warning) << w_api.getErrorString(result) << " failed to change topology using supplied display config! Retrying once more.";
 
-        flags = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES /* This flag is probably not needed, but who knows really... (not MSDOCS at least) */ | SDC_VIRTUAL_MODE_AWARE | SDC_SAVE_TO_DATABASE;
+        // Second try: identical flags; in other implementations this is where a friendly-name remap occurs.
+        flags = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE | SDC_NO_OPTIMIZATION | SDC_ALLOW_CHANGES | SDC_VIRTUAL_MODE_AWARE;
         result = w_api.setDisplayConfig(paths, {}, flags);
         if (result != ERROR_SUCCESS) {
           DD_LOG(error) << w_api.getErrorString(result) << " failed to create new topology configuration!";
@@ -195,7 +197,7 @@ namespace display_device {
       }
 
       // Revert back to the original topology
-      const UINT32 flags {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE | SDC_VIRTUAL_MODE_AWARE};
+      const UINT32 flags {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE | SDC_NO_OPTIMIZATION | SDC_VIRTUAL_MODE_AWARE};
       static_cast<void>(m_w_api->setDisplayConfig(original_data->m_paths, original_data->m_modes, flags));  // Return value does not matter as we are trying out best to undo
     }
 

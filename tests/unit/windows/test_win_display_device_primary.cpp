@@ -54,7 +54,7 @@ namespace {
 #define TEST_F_S_MOCKED(...) DD_MAKE_TEST(TEST_F, WinDisplayDevicePrimaryMocked, __VA_ARGS__)
 
   // Additional convenience global const(s)
-  const UINT32 FLAGS {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE | SDC_VIRTUAL_MODE_AWARE};
+  const UINT32 FLAGS {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE | SDC_NO_OPTIMIZATION | SDC_VIRTUAL_MODE_AWARE};
 
   // Helper functions
   void shiftModeBy(std::optional<display_device::PathAndModeData> &pam, int path_index, POINTL point) {

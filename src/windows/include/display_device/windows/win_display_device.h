@@ -23,6 +23,14 @@ namespace display_device {
      */
     explicit WinDisplayDevice(std::shared_ptr<WinApiLayerInterface> w_api);
 
+    /**
+     * @brief Control whether SetDisplayConfig calls persist to the Windows display database.
+     *        When false, changes are applied for the session only (recommended for session-based profiles).
+     *        Defaults to true to preserve upstream behavior.
+     */
+    static void setPersistToDatabase(bool persist);
+    static bool getPersistToDatabase();
+
     /** For details @see WinDisplayDeviceInterface::isApiAccessAvailable */
     [[nodiscard]] bool isApiAccessAvailable() const override;
 
@@ -64,5 +72,8 @@ namespace display_device {
 
   private:
     std::shared_ptr<WinApiLayerInterface> m_w_api;
+
+    // Global preference for persistence of display changes.
+    static inline bool s_persist_to_database = true;
   };
 }  // namespace display_device
