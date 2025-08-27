@@ -140,6 +140,20 @@ namespace display_device {
     [[nodiscard]] virtual bool setDisplayModes(const DeviceDisplayModeMap &modes) = 0;
 
     /**
+     * @brief Set display modes using closest supported values when exact match is unavailable.
+     * @param modes A map of desired modes to set.
+     * @returns True if the OS accepted changes, false otherwise.
+     * @warning If any of the specified devices are duplicated, modes must be provided
+     *          for duplicates too (same constraints as setDisplayModes).
+     *
+     * This variant allows Windows to adjust the target timing to the closest supported
+     * mode (resolution/refresh) and considers the operation successful even if the final
+     * applied mode differs from the requested one. Intended for user-requested settings
+     * applications where graceful fallback is desired.
+     */
+    [[nodiscard]] virtual bool setDisplayModesWithFallback(const DeviceDisplayModeMap &modes) = 0;
+
+    /**
      * @brief Check whether the specified device is primary.
      * @param device_id A device to perform the check for.
      * @returns True if the device is primary, false otherwise.

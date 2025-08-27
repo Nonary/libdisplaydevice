@@ -29,4 +29,8 @@ namespace display_device {
   bool operator==(const WinWorkarounds &lhs, const WinWorkarounds &rhs) {
     return lhs.m_hdr_blank_delay == rhs.m_hdr_blank_delay;
   }
+
+  bool operator==(const DisplaySettingsSnapshot &lhs, const DisplaySettingsSnapshot &rhs) {
+    return lhs.m_topology == rhs.m_topology && lhs.m_modes == rhs.m_modes && lhs.m_hdr_states == rhs.m_hdr_states && lhs.m_primary_device == rhs.m_primary_device;
+  }
 }  // namespace display_device

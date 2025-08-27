@@ -118,6 +118,99 @@ namespace display_device {
     return ApplyResult::Ok;
   }
 
+  bool SettingsManager::applySettingsSnapshot(const DisplaySettingsSnapshot &snapshot) {
+    const auto api_access {m_dd_api->isApiAccessAvailable()};
+    DD_LOG(info) << "Applying exported display device settings snapshot. API is available: " << toJson(api_access);
+    if (!api_access) {
+      return false;
+    }
+
+    if (!m_dd_api->isTopologyValid(snapshot.m_topology)) {
+      DD_LOG(error) << "Provided snapshot topology is invalid:\n" << toJson(snapshot.m_topology);
+      return false;
+    }
+
+    const auto current_topology {m_dd_api->getCurrentTopology()};
+    if (!m_dd_api->isTopologyValid(current_topology)) {
+      DD_LOG(error) << "Retrieved current topology is invalid:\n" << toJson(current_topology);
+      return false;
+    }
+
+    bool system_settings_touched {false};
+    boost::scope::scope_exit hdr_blank_always_executed_guard {[this, &system_settings_touched]() {
+      if (system_settings_touched) {
+        win_utils::blankHdrStates(*m_dd_api, m_workarounds.m_hdr_blank_delay);
+      }
+    }};
+
+    boost::scope::scope_exit topology_guard {[this, &current_topology, &system_settings_touched]() {
+      const bool is_topology_the_same {m_dd_api->isTopologyTheSame(current_topology, m_dd_api->getCurrentTopology())};
+      system_settings_touched = system_settings_touched || !is_topology_the_same;
+      if (!is_topology_the_same && !m_dd_api->setTopology(current_topology)) {
+        DD_LOG(error) << "Failed to revert topology in snapshot apply guard! Used topology:\n" << toJson(current_topology);
+      }
+    }};
+
+    // Switch to snapshot topology if needed
+    if (!m_dd_api->isTopologyTheSame(current_topology, snapshot.m_topology)) {
+      system_settings_touched = true;
+      if (!m_dd_api->setTopology(snapshot.m_topology)) {
+        DD_LOG(error) << "Failed to change topology to snapshot topology!";
+        return false;
+      }
+    }
+
+    const auto devices_flat {win_utils::flattenTopology(snapshot.m_topology)};
+
+    // Restore display modes strictly (no fallback for restorals)
+    if (!snapshot.m_modes.empty()) {
+      const auto before_modes {m_dd_api->getCurrentDisplayModes(devices_flat)};
+      if (before_modes.empty()) {
+        DD_LOG(error) << "Failed to get current display modes before snapshot apply!";
+        return false;
+      }
+
+      if (before_modes != snapshot.m_modes) {
+        if (!m_dd_api->setDisplayModes(snapshot.m_modes)) {
+          system_settings_touched = true;
+          DD_LOG(error) << "Failed to apply snapshot display modes!";
+          return false;
+        }
+        const auto after_modes {m_dd_api->getCurrentDisplayModes(devices_flat)};
+        if (before_modes != after_modes) {
+          system_settings_touched = true;
+        }
+      }
+    }
+
+    // Restore HDR states strictly
+    if (!snapshot.m_hdr_states.empty()) {
+      const auto before_hdr {m_dd_api->getCurrentHdrStates(devices_flat)};
+      if (before_hdr != snapshot.m_hdr_states) {
+        system_settings_touched = true;
+        if (!m_dd_api->setHdrStates(snapshot.m_hdr_states)) {
+          DD_LOG(error) << "Failed to apply snapshot HDR states!";
+          return false;
+        }
+      }
+    }
+
+    // Restore primary device
+    if (!snapshot.m_primary_device.empty()) {
+      const auto current_primary {win_utils::getPrimaryDevice(*m_dd_api, snapshot.m_topology)};
+      if (current_primary != snapshot.m_primary_device) {
+        system_settings_touched = true;
+        if (!m_dd_api->setAsPrimary(snapshot.m_primary_device)) {
+          DD_LOG(error) << "Failed to set snapshot primary device!";
+          return false;
+        }
+      }
+    }
+
+    topology_guard.set_active(false);
+    return true;
+  }
+
   std::optional<std::tuple<SingleDisplayConfigState, std::string, std::set<std::string>>> SettingsManager::prepareTopology(const SingleDisplayConfiguration &config, const ActiveTopology &topology_before_changes, bool &release_context, bool &system_settings_touched) {
     const EnumeratedDeviceList devices {m_dd_api->enumAvailableDevices()};
     if (devices.empty()) {
@@ -277,10 +370,11 @@ namespace display_device {
       }
     }
 
-    const auto try_change {[&](const DeviceDisplayModeMap &new_modes, const auto info_preamble, const auto error_log) {
+    const auto try_change {[&](const DeviceDisplayModeMap &new_modes, const auto info_preamble, const auto error_log, const bool allow_fallback) {
       if (current_display_modes != new_modes) {
         DD_LOG(info) << info_preamble << toJson(new_modes);
-        if (!m_dd_api->setDisplayModes(new_modes)) {
+        const bool success {allow_fallback ? m_dd_api->setDisplayModesWithFallback(new_modes) : m_dd_api->setDisplayModes(new_modes)};
+        if (!success) {
           system_settings_touched = true;
           DD_LOG(error) << error_log;
           return false;
@@ -303,7 +397,7 @@ namespace display_device {
       const auto original_display_modes {cached_display_modes.empty() ? current_display_modes : cached_display_modes};
       const auto new_display_modes {win_utils::computeNewDisplayModes(config.m_resolution, config.m_refresh_rate, configuring_primary_devices, device_to_configure, additional_devices_to_configure, original_display_modes)};
 
-      if (!try_change(new_display_modes, "Changing display modes to:\n", "Failed to apply new configuration, because new display modes could not be set!")) {
+      if (!try_change(new_display_modes, "Changing display modes to:\n", "Failed to apply new configuration, because new display modes could not be set!", true)) {
         // Error already logged
         return false;
       }
@@ -314,7 +408,7 @@ namespace display_device {
     }
 
     if (might_need_to_restore) {
-      if (!try_change(cached_display_modes, "Changing display modes back to:\n", "Failed to restore original display modes!")) {
+      if (!try_change(cached_display_modes, "Changing display modes back to:\n", "Failed to restore original display modes!", false)) {
         // Error already logged
         return false;
       }

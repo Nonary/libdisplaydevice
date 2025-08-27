@@ -20,4 +20,5 @@ namespace display_device {
   DD_JSON_DEFINE_CONVERTER(HdrStateMap)
   DD_JSON_DEFINE_CONVERTER(SingleDisplayConfigState)
   DD_JSON_DEFINE_CONVERTER(WinWorkarounds)
+  DD_JSON_DEFINE_CONVERTER(DisplaySettingsSnapshot)
 }  // namespace display_device

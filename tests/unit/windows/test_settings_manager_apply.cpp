@@ -169,6 +169,13 @@ namespace {
         .RetiresOnSaturation();
     }
 
+    void expectedSetDisplayModesWithFallbackCall(InSequence &sequence /* To ensure that sequence is created outside this scope */, const display_device::DeviceDisplayModeMap &modes, const bool success = true) {
+      EXPECT_CALL(*m_dd_api, setDisplayModesWithFallback(modes))
+        .Times(1)
+        .WillOnce(Return(success))
+        .RetiresOnSaturation();
+    }
+
     void expectedGetCurrentDisplayModesCall(InSequence &sequence /* To ensure that sequence is created outside this scope */, const std::set<std::string> &devices, const display_device::DeviceDisplayModeMap &modes) {
       EXPECT_CALL(*m_dd_api, getCurrentDisplayModes(devices))
         .Times(1)
@@ -733,7 +740,7 @@ TEST_F_S_MOCKED(PrepareDisplayModes, FailedToSetDisplayModes) {
   expectedIsTopologyTheSameCall(sequence, DEFAULT_CURRENT_TOPOLOGY, DEFAULT_CURRENT_TOPOLOGY);
 
   expectedGetCurrentDisplayModesCall(sequence, display_device::win_utils::flattenTopology(DEFAULT_CURRENT_TOPOLOGY), DEFAULT_CURRENT_MODES);
-  expectedSetDisplayModesCall(sequence, new_modes, false);
+  expectedSetDisplayModesWithFallbackCall(sequence, new_modes, false);
 
   expectedTopologyGuardTopologyCall(sequence);
   expectedTopologyGuardNewlyCapturedContextCall(sequence, false);
@@ -757,7 +764,7 @@ TEST_F_S_MOCKED(PrepareDisplayModes, DisplayModesSet, ResolutionOnly) {
   expectedIsTopologyTheSameCall(sequence, DEFAULT_CURRENT_TOPOLOGY, DEFAULT_CURRENT_TOPOLOGY);
 
   expectedGetCurrentDisplayModesCall(sequence, display_device::win_utils::flattenTopology(DEFAULT_CURRENT_TOPOLOGY), DEFAULT_CURRENT_MODES);
-  expectedSetDisplayModesCall(sequence, new_modes);
+  expectedSetDisplayModesWithFallbackCall(sequence, new_modes);
   expectedGetCurrentDisplayModesCall(sequence, display_device::win_utils::flattenTopology(DEFAULT_CURRENT_TOPOLOGY), new_modes);
   expectedPersistenceCall(sequence, persistence_input);
   expectedHdrWorkaroundCalls(sequence);
@@ -780,7 +787,7 @@ TEST_F_S_MOCKED(PrepareDisplayModes, DisplayModesSet, RefreshRateOnly) {
   expectedIsTopologyTheSameCall(sequence, DEFAULT_CURRENT_TOPOLOGY, DEFAULT_CURRENT_TOPOLOGY);
 
   expectedGetCurrentDisplayModesCall(sequence, display_device::win_utils::flattenTopology(DEFAULT_CURRENT_TOPOLOGY), DEFAULT_CURRENT_MODES);
-  expectedSetDisplayModesCall(sequence, new_modes);
+  expectedSetDisplayModesWithFallbackCall(sequence, new_modes);
   expectedGetCurrentDisplayModesCall(sequence, display_device::win_utils::flattenTopology(DEFAULT_CURRENT_TOPOLOGY), new_modes);
   expectedPersistenceCall(sequence, persistence_input);
   expectedHdrWorkaroundCalls(sequence);
@@ -804,7 +811,7 @@ TEST_F_S_MOCKED(PrepareDisplayModes, DisplayModesSet, ResolutionAndRefreshRate) 
   expectedIsTopologyTheSameCall(sequence, DEFAULT_CURRENT_TOPOLOGY, DEFAULT_CURRENT_TOPOLOGY);
 
   expectedGetCurrentDisplayModesCall(sequence, display_device::win_utils::flattenTopology(DEFAULT_CURRENT_TOPOLOGY), DEFAULT_CURRENT_MODES);
-  expectedSetDisplayModesCall(sequence, new_modes);
+  expectedSetDisplayModesWithFallbackCall(sequence, new_modes);
   expectedGetCurrentDisplayModesCall(sequence, display_device::win_utils::flattenTopology(DEFAULT_CURRENT_TOPOLOGY), new_modes);
   expectedPersistenceCall(sequence, persistence_input);
   expectedHdrWorkaroundCalls(sequence);
@@ -830,7 +837,7 @@ TEST_F_S_MOCKED(PrepareDisplayModes, DisplayModesSet, ResolutionAndRefreshRate, 
   expectedIsTopologyTheSameCall(sequence, DEFAULT_CURRENT_TOPOLOGY, DEFAULT_CURRENT_TOPOLOGY);
 
   expectedGetCurrentDisplayModesCall(sequence, display_device::win_utils::flattenTopology(DEFAULT_CURRENT_TOPOLOGY), DEFAULT_CURRENT_MODES);
-  expectedSetDisplayModesCall(sequence, new_modes);
+  expectedSetDisplayModesWithFallbackCall(sequence, new_modes);
   expectedGetCurrentDisplayModesCall(sequence, display_device::win_utils::flattenTopology(DEFAULT_CURRENT_TOPOLOGY), new_modes);
   expectedPersistenceCall(sequence, persistence_input);
   expectedHdrWorkaroundCalls(sequence);
@@ -853,7 +860,7 @@ TEST_F_S_MOCKED(PrepareDisplayModes, DisplayModesSet, CachedModesReused) {
   expectedIsTopologyTheSameCall(sequence, DEFAULT_CURRENT_TOPOLOGY, DEFAULT_CURRENT_TOPOLOGY);
 
   expectedGetCurrentDisplayModesCall(sequence, display_device::win_utils::flattenTopology(DEFAULT_CURRENT_TOPOLOGY), DEFAULT_CURRENT_MODES);
-  expectedSetDisplayModesCall(sequence, new_modes);
+  expectedSetDisplayModesWithFallbackCall(sequence, new_modes);
   expectedGetCurrentDisplayModesCall(sequence, display_device::win_utils::flattenTopology(DEFAULT_CURRENT_TOPOLOGY), new_modes);
   expectedHdrWorkaroundCalls(sequence);
 
@@ -875,7 +882,7 @@ TEST_F_S_MOCKED(PrepareDisplayModes, DisplayModesSet, GuardInvoked) {
   expectedIsTopologyTheSameCall(sequence, DEFAULT_CURRENT_TOPOLOGY, DEFAULT_CURRENT_TOPOLOGY);
 
   expectedGetCurrentDisplayModesCall(sequence, display_device::win_utils::flattenTopology(DEFAULT_CURRENT_TOPOLOGY), DEFAULT_CURRENT_MODES);
-  expectedSetDisplayModesCall(sequence, new_modes);
+  expectedSetDisplayModesWithFallbackCall(sequence, new_modes);
   expectedGetCurrentDisplayModesCall(sequence, display_device::win_utils::flattenTopology(DEFAULT_CURRENT_TOPOLOGY), new_modes);
   expectedPersistenceCall(sequence, persistence_input, false);
 
@@ -902,7 +909,7 @@ TEST_F_S_MOCKED(PrepareDisplayModes, DisplayModesSet, GuardNotInvoked) {
   expectedIsTopologyTheSameCall(sequence, DEFAULT_CURRENT_TOPOLOGY, DEFAULT_CURRENT_TOPOLOGY);
 
   expectedGetCurrentDisplayModesCall(sequence, display_device::win_utils::flattenTopology(DEFAULT_CURRENT_TOPOLOGY), DEFAULT_CURRENT_MODES);
-  expectedSetDisplayModesCall(sequence, new_modes);
+  expectedSetDisplayModesWithFallbackCall(sequence, new_modes);
   expectedGetCurrentDisplayModesCall(sequence, display_device::win_utils::flattenTopology(DEFAULT_CURRENT_TOPOLOGY), DEFAULT_CURRENT_MODES);
   expectedPersistenceCall(sequence, persistence_input, false);
 

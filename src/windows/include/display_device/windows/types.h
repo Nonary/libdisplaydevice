@@ -179,4 +179,18 @@ namespace display_device {
      */
     friend bool operator==(const WinWorkarounds &lhs, const WinWorkarounds &rhs);
   };
+
+  /**
+   * @brief Snapshot of current display settings for restoration.
+   *
+   * Captures topology, per-device modes and HDR states, and a primary device.
+   */
+  struct DisplaySettingsSnapshot {
+    ActiveTopology m_topology {};
+    DeviceDisplayModeMap m_modes {};
+    HdrStateMap m_hdr_states {};
+    std::string m_primary_device {};
+
+    friend bool operator==(const DisplaySettingsSnapshot &lhs, const DisplaySettingsSnapshot &rhs);
+  };
 }  // namespace display_device

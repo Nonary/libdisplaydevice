@@ -18,6 +18,7 @@ namespace display_device {
     MOCK_METHOD(bool, setTopology, (const ActiveTopology &), (override));
     MOCK_METHOD(DeviceDisplayModeMap, getCurrentDisplayModes, (const std::set<std::string> &), (const, override));
     MOCK_METHOD(bool, setDisplayModes, (const DeviceDisplayModeMap &), (override));
+    MOCK_METHOD(bool, setDisplayModesWithFallback, (const DeviceDisplayModeMap &), (override));
     MOCK_METHOD(bool, isPrimary, (const std::string &), (const, override));
     MOCK_METHOD(bool, setAsPrimary, (const std::string &), (override));
     MOCK_METHOD(HdrStateMap, getCurrentHdrStates, (const std::set<std::string> &), (const, override));

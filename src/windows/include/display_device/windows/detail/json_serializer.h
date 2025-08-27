@@ -15,5 +15,6 @@ namespace display_device {
   DD_JSON_DECLARE_SERIALIZE_TYPE(SingleDisplayConfigState::Modified)
   DD_JSON_DECLARE_SERIALIZE_TYPE(SingleDisplayConfigState)
   DD_JSON_DECLARE_SERIALIZE_TYPE(WinWorkarounds)
+  DD_JSON_DECLARE_SERIALIZE_TYPE(DisplaySettingsSnapshot)
 }  // namespace display_device
 #endif

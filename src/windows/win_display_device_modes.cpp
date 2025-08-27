@@ -233,4 +233,33 @@ namespace display_device {
     DD_LOG(error) << "Failed to set display mode(-s) completely!";
     return false;
   }
+
+  bool WinDisplayDevice::setDisplayModesWithFallback(const DeviceDisplayModeMap &modes) {
+    if (modes.empty()) {
+      DD_LOG(error) << "Modes map is empty!";
+      return false;
+    }
+
+    // Validate that all duplicated devices are provided, same as in strict setter
+    const auto keys_view {std::ranges::views::keys(modes)};
+    const std::set<std::string> device_ids {std::begin(keys_view), std::end(keys_view)};
+    const auto all_device_ids {win_utils::getAllDeviceIdsAndMatchingDuplicates(*m_w_api, device_ids)};
+    if (all_device_ids.empty()) {
+      DD_LOG(error) << "Failed to get all duplicated devices!";
+      return false;
+    }
+
+    if (all_device_ids.size() != device_ids.size()) {
+      DD_LOG(error) << "Not all modes for duplicate displays were provided!";
+      return false;
+    }
+
+    // Apply in relaxed mode and accept the OS's closest match without strict verification.
+    if (!doSetModes(*m_w_api, modes, Strategy::Relaxed)) {
+      // Error already logged
+      return false;
+    }
+
+    return true;
+  }
 }  // namespace display_device

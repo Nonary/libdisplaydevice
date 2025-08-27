@@ -48,6 +48,19 @@ namespace display_device {
     /** For details @see SettingsManagerInterface::resetPersistence */
     [[nodiscard]] bool resetPersistence() override;
 
+    /**
+     * @brief Export the current display settings for restoration.
+     * @return Snapshot of current settings or nullopt on failure.
+     */
+    [[nodiscard]] std::optional<DisplaySettingsSnapshot> exportCurrentSettings() const;
+
+    /**
+     * @brief Apply a previously exported settings snapshot (strict restore; no fallback).
+     * @param snapshot Snapshot to apply.
+     * @return True on success, false otherwise.
+     */
+    [[nodiscard]] bool applySettingsSnapshot(const DisplaySettingsSnapshot &snapshot);
+
   protected:
     /**
      * @brief Preps the topology so that the further settings could be applied.

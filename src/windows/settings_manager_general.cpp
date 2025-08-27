@@ -9,6 +9,8 @@
 #include "display_device/logging.h"
 #include "display_device/noop_audio_context.h"
 #include "display_device/windows/json.h"
+// utils used: flattenTopology, getPrimaryDevice
+#include "display_device/windows/settings_utils.h"
 
 namespace display_device {
   SettingsManager::SettingsManager(
@@ -60,5 +62,33 @@ namespace display_device {
       m_audio_context_api->release();
     }
     return true;
+  }
+
+  std::optional<DisplaySettingsSnapshot> SettingsManager::exportCurrentSettings() const {
+    const auto api_access {m_dd_api->isApiAccessAvailable()};
+    DD_LOG(info) << "Exporting current display device settings. API is available: " << toJson(api_access);
+    if (!api_access) {
+      return std::nullopt;
+    }
+
+    const auto topology {m_dd_api->getCurrentTopology()};
+    if (!m_dd_api->isTopologyValid(topology)) {
+      DD_LOG(error) << "Retrieved current topology is invalid:\n" << toJson(topology);
+      return std::nullopt;
+    }
+
+    const auto devices_flat {win_utils::flattenTopology(topology)};
+    const auto modes {m_dd_api->getCurrentDisplayModes(devices_flat)};
+    if (modes.empty()) {
+      DD_LOG(error) << "Failed to get current display modes during export!";
+      return std::nullopt;
+    }
+
+    const auto hdr_states {m_dd_api->getCurrentHdrStates(devices_flat)};
+    const auto primary_device {win_utils::getPrimaryDevice(*m_dd_api, topology)};
+
+    DisplaySettingsSnapshot snapshot {topology, modes, hdr_states, primary_device};
+    DD_LOG(info) << "Exported snapshot:\n" << toJson(snapshot);
+    return snapshot;
   }
 }  // namespace display_device
