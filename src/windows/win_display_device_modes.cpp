@@ -102,6 +102,14 @@ namespace display_device {
     }
   }  // namespace
 
+  void WinDisplayDevice::setForceStrictModes(bool strict_only) {
+    s_force_strict_modes = strict_only;
+  }
+
+  bool WinDisplayDevice::getForceStrictModes() {
+    return s_force_strict_modes;
+  }
+
   DeviceDisplayModeMap WinDisplayDevice::getCurrentDisplayModes(const std::set<std::string> &device_ids) const {
     if (device_ids.empty()) {
       DD_LOG(error) << "Device id set is empty!";
@@ -182,6 +190,40 @@ namespace display_device {
       return false;
     }
 
+    // If strict-only is forced, bypass the relaxed strategy entirely.
+    if (s_force_strict_modes) {
+      if (!doSetModes(*m_w_api, modes, Strategy::Strict)) {
+        // Error already logged
+        const UINT32 flags_restore {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE | SDC_NO_OPTIMIZATION | SDC_VIRTUAL_MODE_AWARE};
+        static_cast<void>(m_w_api->setDisplayConfig(original_data->m_paths, original_data->m_modes, flags_restore));
+        DD_LOG(error) << "Failed to set display mode(-s) completely!";
+        return false;
+      }
+
+      // Verify strict result matches requested (fuzzy to account for minor variations)
+      const auto keys_view_verify {std::ranges::views::keys(modes)};
+      const std::set<std::string> verify_ids {std::begin(keys_view_verify), std::end(keys_view_verify)};
+      const auto verify_modes {getCurrentDisplayModes(verify_ids)};
+      if (!verify_modes.empty()) {
+        bool ok {true};
+        for (const auto &[device_id, requested_mode] : modes) {
+          const auto it {verify_modes.find(device_id)};
+          if (it == std::end(verify_modes) || !win_utils::fuzzyCompareModes(it->second, requested_mode)) {
+            ok = false;
+            break;
+          }
+        }
+        if (ok) {
+          return true;
+        }
+      }
+
+      const UINT32 flags_restore {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE | SDC_NO_OPTIMIZATION | SDC_VIRTUAL_MODE_AWARE};
+      static_cast<void>(m_w_api->setDisplayConfig(original_data->m_paths, original_data->m_modes, flags_restore));
+      DD_LOG(error) << "Failed to set display mode(-s) completely!";
+      return false;
+    }
+
     if (!doSetModes(*m_w_api, modes, Strategy::Relaxed)) {
       // Error already logged
       return false;
@@ -228,9 +270,11 @@ namespace display_device {
       }
     }
 
-    const UINT32 flags {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE | SDC_NO_OPTIMIZATION | SDC_VIRTUAL_MODE_AWARE};
-    static_cast<void>(m_w_api->setDisplayConfig(original_data->m_paths, original_data->m_modes, flags));  // Return value does not matter as we are trying out best to undo
-    DD_LOG(error) << "Failed to set display mode(-s) completely!";
-    return false;
+    {
+      const UINT32 flags {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE | SDC_NO_OPTIMIZATION | SDC_VIRTUAL_MODE_AWARE};
+      static_cast<void>(m_w_api->setDisplayConfig(original_data->m_paths, original_data->m_modes, flags));  // Return value does not matter as we are trying our best to undo
+      DD_LOG(error) << "Failed to set display mode(-s) completely!";
+      return false;
+    }
   }
 }  // namespace display_device

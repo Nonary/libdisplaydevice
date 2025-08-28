@@ -115,5 +115,19 @@ namespace display_device {
      * @examples_end
      */
     [[nodiscard]] virtual bool resetPersistence() = 0;
+
+    /**
+     * @brief Export a full restore profile of the current system state.
+     * @returns Serialized bytes (JSON) describing topology, modes, HDR states and primary device,
+     *          or null optional on failure.
+     */
+    [[nodiscard]] virtual std::optional<std::vector<std::uint8_t>> exportRestoreProfile() const = 0;
+
+    /**
+     * @brief Restore settings from a previously exported profile.
+     * @param data Serialized bytes (JSON) previously produced by exportRestoreProfile().
+     * @returns Revert-style result code indicating outcome.
+     */
+    [[nodiscard]] virtual RevertResult restoreFromProfile(const std::vector<std::uint8_t> &data) = 0;
   };
 }  // namespace display_device

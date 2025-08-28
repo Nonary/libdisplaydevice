@@ -31,6 +31,14 @@ namespace display_device {
     static void setPersistToDatabase(bool persist);
     static bool getPersistToDatabase();
 
+    /**
+     * @brief Control whether display mode application should be strict-only.
+     *        When true, skips relaxed (best-effort) application and requires
+     *        an exact match without Windows fallbacks. Defaults to false.
+     */
+    static void setForceStrictModes(bool strict_only);
+    static bool getForceStrictModes();
+
     /** For details @see WinDisplayDeviceInterface::isApiAccessAvailable */
     [[nodiscard]] bool isApiAccessAvailable() const override;
 
@@ -75,5 +83,8 @@ namespace display_device {
 
     // Global preference for persistence of display changes.
     static inline bool s_persist_to_database = true;
+
+    // Global preference to force strict-only mode setting.
+    static inline bool s_force_strict_modes = false;
   };
 }  // namespace display_device

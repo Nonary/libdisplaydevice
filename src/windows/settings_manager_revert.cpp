@@ -12,6 +12,7 @@
 #include "display_device/logging.h"
 #include "display_device/windows/json.h"
 #include "display_device/windows/settings_utils.h"
+#include "display_device/windows/win_display_device.h"
 
 namespace display_device {
   namespace {
@@ -48,19 +49,7 @@ namespace display_device {
         win_utils::blankHdrStates(*m_dd_api, m_workarounds.m_hdr_blank_delay);
       }
     }};
-    boost::scope::scope_exit topology_prep_guard {[this, &current_topology, &system_settings_touched]() {
-      auto topology_to_restore {win_utils::createFullExtendedTopology(*m_dd_api)};
-      if (!m_dd_api->isTopologyValid(topology_to_restore)) {
-        topology_to_restore = current_topology;
-      }
-
-      const bool is_topology_the_same {m_dd_api->isTopologyTheSame(current_topology, topology_to_restore)};
-      system_settings_touched = system_settings_touched || !is_topology_the_same;
-      if (!is_topology_the_same && !m_dd_api->setTopology(topology_to_restore)) {
-        DD_LOG(error) << "failed to revert topology in revertSettings topology guard! Used the following topology:\n"
-                      << toJson(topology_to_restore);
-      }
-    }};
+    // Removed previous behavior of activating all displays on failures to avoid disrupting restoration.
 
     // We can revert the modified setting independently before playing around with initial topology.
     bool switched_to_modified_topology {false};
@@ -94,7 +83,6 @@ namespace display_device {
     }
 
     // Disable guards
-    topology_prep_guard.set_active(false);
     return RevertResult::Ok;
   }
 
@@ -144,6 +132,9 @@ namespace display_device {
     if (!cached_state->m_modified.m_original_modes.empty()) {
       const auto current_modes {m_dd_api->getCurrentDisplayModes(win_utils::flattenTopology(cached_state->m_modified.m_topology))};
       if (current_modes != cached_state->m_modified.m_original_modes) {
+        // Force strict display mode application for restoration.
+        WinDisplayDevice::setForceStrictModes(true);
+        boost::scope::scope_exit strict_reset {[]() { WinDisplayDevice::setForceStrictModes(false); }};
         DD_LOG(info) << "Trying to change back the display modes to:\n"
                      << toJson(cached_state->m_modified.m_original_modes);
         if (!m_dd_api->setDisplayModes(cached_state->m_modified.m_original_modes)) {

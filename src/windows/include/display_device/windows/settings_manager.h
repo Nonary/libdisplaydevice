@@ -48,6 +48,12 @@ namespace display_device {
     /** For details @see SettingsManagerInterface::resetPersistence */
     [[nodiscard]] bool resetPersistence() override;
 
+    /** For details @see SettingsManagerInterface::exportRestoreProfile */
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>> exportRestoreProfile() const override;
+
+    /** For details @see SettingsManagerInterface::restoreFromProfile */
+    [[nodiscard]] RevertResult restoreFromProfile(const std::vector<std::uint8_t> &data) override;
+
   protected:
     /**
      * @brief Preps the topology so that the further settings could be applied.

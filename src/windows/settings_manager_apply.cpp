@@ -154,7 +154,12 @@ namespace display_device {
       return std::nullopt;
     }
 
-    const auto &[new_topology, device_to_configure, additional_devices_to_configure] = win_utils::computeNewTopologyAndMetadata(config.m_device_prep, config.m_device_id, *stripped_initial_state);
+    // Enforce topology when user is changing modes/HDR without specifying a device (primary group implied).
+    const bool changing_settings {config.m_resolution || config.m_refresh_rate || config.m_hdr_state};
+    const bool primary_group_implied {config.m_device_id.empty()};
+    const auto effective_prep = (changing_settings && primary_group_implied) ? SingleDisplayConfiguration::DevicePreparation::EnsureOnlyDisplay : config.m_device_prep;
+
+    const auto &[new_topology, device_to_configure, additional_devices_to_configure] = win_utils::computeNewTopologyAndMetadata(effective_prep, config.m_device_id, *stripped_initial_state);
     const auto change_is_needed {!m_dd_api->isTopologyTheSame(topology_before_changes, new_topology)};
     DD_LOG(info) << "Newly computed display device topology data:\n"
                  << "  - topology: " << toJson(new_topology, JSON_COMPACT) << "\n"
