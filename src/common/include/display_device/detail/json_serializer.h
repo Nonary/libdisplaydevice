@@ -12,6 +12,7 @@ namespace display_device {
   // Enums
   DD_JSON_DECLARE_SERIALIZE_TYPE(HdrState)
   DD_JSON_DECLARE_SERIALIZE_TYPE(SingleDisplayConfiguration::DevicePreparation)
+  DD_JSON_DECLARE_SERIALIZE_TYPE(SingleDisplayConfiguration::Profile)
 
   // Structs
   DD_JSON_DECLARE_SERIALIZE_TYPE(Resolution)

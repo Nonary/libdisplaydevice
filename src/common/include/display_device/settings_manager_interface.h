@@ -71,8 +71,13 @@ namespace display_device {
 
     /**
      * @brief Apply the provided configuration to the system.
-     * @param config A desired configuration for the display device.
+     * @param config A desired configuration for the display device. See `SingleDisplayConfiguration::Profile`.
      * @returns The apply result.
+     *
+     * Profile semantics:
+     * - Primary: attempts to restore to the cached master configuration before applying when needed.
+     * - Secondary: applies on top of the current state and does not implicitly restore to the master configuration.
+     *
      * @examples
      * const SingleDisplayConfiguration config;
      *

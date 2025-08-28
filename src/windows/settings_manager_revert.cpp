@@ -49,16 +49,19 @@ namespace display_device {
       }
     }};
     boost::scope::scope_exit topology_prep_guard {[this, &current_topology, &system_settings_touched]() {
-      auto topology_to_restore {win_utils::createFullExtendedTopology(*m_dd_api)};
-      if (!m_dd_api->isTopologyValid(topology_to_restore)) {
-        topology_to_restore = current_topology;
+      // On any early-exit failure, restore the original topology we started with
+      // instead of forcing a full extended topology.
+      const auto current_topology_now {m_dd_api->getCurrentTopology()};
+      if (!m_dd_api->isTopologyValid(current_topology_now) || !m_dd_api->isTopologyValid(current_topology)) {
+        // If we cannot trust either snapshot, do nothing.
+        return;
       }
 
-      const bool is_topology_the_same {m_dd_api->isTopologyTheSame(current_topology, topology_to_restore)};
+      const bool is_topology_the_same {m_dd_api->isTopologyTheSame(current_topology_now, current_topology)};
       system_settings_touched = system_settings_touched || !is_topology_the_same;
-      if (!is_topology_the_same && !m_dd_api->setTopology(topology_to_restore)) {
+      if (!is_topology_the_same && !m_dd_api->setTopology(current_topology)) {
         DD_LOG(error) << "failed to revert topology in revertSettings topology guard! Used the following topology:\n"
-                      << toJson(topology_to_restore);
+                      << toJson(current_topology);
       }
     }};
 

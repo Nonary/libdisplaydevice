@@ -131,6 +131,18 @@ namespace display_device {
    */
   struct SingleDisplayConfiguration {
     /**
+     * @brief Profile behavior for applying settings.
+     *
+     * Primary profiles attempt to restore to the cached master configuration
+     * (initial/original state) before applying new changes when needed.
+     * Secondary profiles apply changes on top of the current state and do not
+     * attempt to restore to the master configuration implicitly.
+     */
+    enum class Profile {
+      Primary,  /**< Restores to master configuration first when needed. */
+      Secondary /**< Applies on top of current state; no implicit restore. */
+    };
+    /**
      * @brief Enum detailing how to prepare the display device.
      */
     enum class DevicePreparation {
@@ -141,6 +153,7 @@ namespace display_device {
     };
 
     std::string m_device_id {}; /**< Device to perform configuration for (can be empty if primary device should be used). */
+    Profile m_profile {Profile::Primary}; /**< Profile behavior to use when applying settings. */
     DevicePreparation m_device_prep {}; /**< Instruction on how to prepare device. */
     std::optional<Resolution> m_resolution {}; /**< Resolution to configure. */
     std::optional<FloatingPoint> m_refresh_rate {}; /**< Refresh rate to configure. */

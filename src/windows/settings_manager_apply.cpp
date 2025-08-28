@@ -263,10 +263,15 @@ namespace display_device {
 
     if (change_is_needed) {
       if (cached_state && !m_dd_api->isTopologyTheSame(cached_state->m_modified.m_topology, new_topology)) {
-        DD_LOG(warning) << "To apply new display device settings, previous modifications must be undone! Trying to undo them now.";
-        if (revertModifiedSettings(topology_before_changes, system_settings_touched) != RevertResult::Ok) {
-          DD_LOG(error) << "Failed to apply new configuration, because the previous settings could not be reverted!";
-          return std::nullopt;
+        // Only primary profiles attempt to restore to master configuration first.
+        if (config.m_profile == SingleDisplayConfiguration::Profile::Primary) {
+          DD_LOG(warning) << "To apply new display device settings (primary), previous modifications must be undone! Trying to undo them now.";
+          if (revertModifiedSettings(topology_before_changes, system_settings_touched) != RevertResult::Ok) {
+            DD_LOG(error) << "Failed to apply new configuration, because the previous settings could not be reverted!";
+            return std::nullopt;
+          }
+        } else {
+          DD_LOG(info) << "Secondary profile: skipping revert to master configuration before applying new topology.";
         }
       }
 
@@ -345,7 +350,7 @@ namespace display_device {
       return true;
     }
 
-    if (might_need_to_restore) {
+    if (might_need_to_restore && config.m_profile == SingleDisplayConfiguration::Profile::Primary) {
       if (!try_change(cached_primary_device, "Changing primary display back to:\n", "Failed to restore original primary device!")) {
         // Error already logged
         return false;
@@ -407,7 +412,7 @@ namespace display_device {
       return true;
     }
 
-    if (might_need_to_restore) {
+    if (might_need_to_restore && config.m_profile == SingleDisplayConfiguration::Profile::Primary) {
       if (!try_change(cached_display_modes, "Changing display modes back to:\n", "Failed to restore original display modes!", false)) {
         // Error already logged
         return false;
@@ -463,7 +468,7 @@ namespace display_device {
       return true;
     }
 
-    if (might_need_to_restore) {
+    if (might_need_to_restore && config.m_profile == SingleDisplayConfiguration::Profile::Primary) {
       if (!try_change(cached_hdr_states, "Changing HDR states back to:\n", "Failed to restore original HDR states!")) {
         // Error already logged
         return false;
