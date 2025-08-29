@@ -84,6 +84,17 @@ namespace display_device {
         return true;
       }
 
+      // First, validate the configuration so Windows won't push us into a safe fallback
+      // (e.g. 800x600) if the request is not fully satisfiable.
+      {
+        const UINT32 validate_flags {SDC_VALIDATE | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_VIRTUAL_MODE_AWARE};
+        const LONG validate_result {w_api.setDisplayConfig(display_data->m_paths, display_data->m_modes, validate_flags)};
+        if (validate_result != ERROR_SUCCESS) {
+          DD_LOG(error) << w_api.getErrorString(validate_result) << " failed to validate display mode configuration!";
+          return false;
+        }
+      }
+
       UINT32 flags {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE | SDC_NO_OPTIMIZATION | SDC_VIRTUAL_MODE_AWARE};
       if (strategy == Strategy::Relaxed) {
         // It's probably best for Windows to select the "best" display settings for us. However, in case we
