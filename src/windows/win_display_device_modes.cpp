@@ -512,8 +512,8 @@ namespace display_device {
               }
             }
 
-            DD_LOG(info) << "Relaxed temporary apply didn't match; retrying with enumerated-mode fallback.";
-            if (do_apply(enum_fallback_modes, Strategy::Relaxed)) {
+            DD_LOG(info) << "Relaxed temporary apply didn't match; retrying with enumerated-mode fallback (strict).";
+            if (do_apply(enum_fallback_modes, Strategy::Strict)) {
               const auto current_after_enum {getCurrentDisplayModes(device_ids)};
               const auto all_enum_match = [&enum_fallback_modes](const DeviceDisplayModeMap &cur) {
                 for (const auto &[did, exp] : enum_fallback_modes) {
@@ -554,8 +554,8 @@ namespace display_device {
         }
 
         if (adjusted) {
-          DD_LOG(info) << "Relaxed temporary apply didn’t match; retrying with preferred-resolution aspect fallback.";
-          if (do_apply(aspect_fallback_modes, Strategy::Relaxed)) {
+          DD_LOG(info) << "Relaxed temporary apply didn't match; retrying with preferred-resolution aspect fallback (strict).";
+          if (do_apply(aspect_fallback_modes, Strategy::Strict)) {
             const auto current_modes_after_fallback {getCurrentDisplayModes(device_ids)};
             const auto all_fallback_match = [&aspect_fallback_modes](const DeviceDisplayModeMap &cur) {
               for (const auto &[did, exp] : aspect_fallback_modes) {
@@ -585,7 +585,7 @@ namespace display_device {
     }
 
     // Undo on failure (temporary, no save to database)
-    const UINT32 flags {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_VIRTUAL_MODE_AWARE};
+    const UINT32 flags {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_NO_OPTIMIZATION | SDC_VIRTUAL_MODE_AWARE};
     static_cast<void>(m_w_api->setDisplayConfig(original_data->m_paths, original_data->m_modes, flags));
     DD_LOG(error) << "Failed to set display mode(-s) completely (temporary apply)!";
     return false;
