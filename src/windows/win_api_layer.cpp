@@ -14,6 +14,8 @@
 #include <cmath>
 #include <cstdint>
 #include <iomanip>
+#include <set>
+#include <tuple>
 
 // local includes
 #include "display_device/logging.h"
@@ -686,5 +688,74 @@ namespace display_device {
 
     const auto width {static_cast<double>(*enum_data.m_width) / static_cast<double>(source_mode.width)};
     return Rational {static_cast<unsigned int>(std::round((static_cast<double>(GetDpiForSystem()) / 96. / width) * 100)), 100};
+  }
+
+  std::optional<Resolution> WinApiLayer::getPreferredResolution(const DISPLAYCONFIG_PATH_INFO &path) const {
+    DISPLAYCONFIG_TARGET_PREFERRED_MODE preferred = {};
+    preferred.header.adapterId = path.targetInfo.adapterId;
+    preferred.header.id = path.targetInfo.id;
+    preferred.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_PREFERRED_MODE;
+    preferred.header.size = sizeof(preferred);
+
+    LONG result {DisplayConfigGetDeviceInfo(&preferred.header)};
+    if (result != ERROR_SUCCESS) {
+      DD_LOG(debug) << getErrorString(result) << " failed to get target preferred mode!";
+      return std::nullopt;
+    }
+
+    // DISPLAYCONFIG_TARGET_PREFERRED_MODE::width/height represent preferred mode dimensions
+    if (preferred.width == 0 || preferred.height == 0) {
+      return std::nullopt;
+    }
+
+    return Resolution {static_cast<unsigned int>(preferred.width), static_cast<unsigned int>(preferred.height)};
+  }
+
+  std::vector<DisplayMode> WinApiLayer::getSupportedDisplayModes(const DISPLAYCONFIG_PATH_INFO &path) const {
+    std::vector<DisplayMode> modes;
+
+    const std::string display_name {getDisplayName(path)};
+    if (display_name.empty()) {
+      DD_LOG(debug) << "Failed to get display name for path while enumerating supported modes.";
+      return modes;
+    }
+
+    // Use EnumDisplaySettingsExA to enumerate raw modes for the logical display
+    // Note: dmDisplayFrequency is integer Hz; fractional rates are approximated by Windows
+    DEVMODEA dev_mode {};
+    dev_mode.dmSize = sizeof(DEVMODEA);
+
+    std::set<std::tuple<unsigned int, unsigned int, unsigned int>> seen;  // (w,h,Hz)
+    for (DWORD i = 0; ; ++i) {
+      ZeroMemory(&dev_mode, sizeof(DEVMODEA));
+      dev_mode.dmSize = sizeof(DEVMODEA);
+
+      if (!EnumDisplaySettingsExA(display_name.c_str(), i, &dev_mode, EDS_RAWMODE)) {
+        break;  // No more modes
+      }
+
+      if (!(dev_mode.dmFields & (DM_PELSWIDTH | DM_PELSHEIGHT))) {
+        continue;
+      }
+
+      const unsigned int w = static_cast<unsigned int>(dev_mode.dmPelsWidth);
+      const unsigned int h = static_cast<unsigned int>(dev_mode.dmPelsHeight);
+      unsigned int hz = 0;
+      if (dev_mode.dmFields & DM_DISPLAYFREQUENCY) {
+        hz = static_cast<unsigned int>(dev_mode.dmDisplayFrequency);
+      }
+
+      if (w == 0 || h == 0 || hz == 0) {
+        // Skip invalid/incomplete entries
+        continue;
+      }
+
+      auto key = std::make_tuple(w, h, hz);
+      if (seen.insert(key).second) {
+        modes.push_back(DisplayMode {Resolution {w, h}, Rational {hz, 1}});
+      }
+    }
+
+    return modes;
   }
 }  // namespace display_device

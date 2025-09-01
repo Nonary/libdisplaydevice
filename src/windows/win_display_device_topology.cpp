@@ -12,6 +12,7 @@
 // local includes
 #include "display_device/logging.h"
 #include "display_device/windows/win_api_utils.h"
+#include "display_device/windows/json.h"
 
 namespace display_device {
   namespace {
@@ -36,7 +37,7 @@ namespace display_device {
       if (result == ERROR_GEN_FAILURE) {
         DD_LOG(warning) << w_api.getErrorString(result) << " failed to change topology using the topology from Windows DB! Asking Windows to create the topology.";
 
-        flags = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES /* This flag is probably not needed, but who knows really... (not MSDOCS at least) */ | SDC_VIRTUAL_MODE_AWARE | SDC_SAVE_TO_DATABASE;
+        flags = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES /* This flag is probably not needed, but who knows really... (not MSDOCS at least) */ | SDC_VIRTUAL_MODE_AWARE;
         result = w_api.setDisplayConfig(paths, {}, flags);
         if (result != ERROR_SUCCESS) {
           DD_LOG(error) << w_api.getErrorString(result) << " failed to create new topology configuration!";
@@ -163,39 +164,21 @@ namespace display_device {
       if (isTopologyValid(updated_topology)) {
         if (isTopologyTheSame(new_topology, updated_topology)) {
           return true;
-        } else {
-          // There is an interesting bug in Windows when you have nearly
-          // identical devices, drivers or something. For example, imagine you have:
-          //    AM   - Actual Monitor
-          //    IDD1 - Virtual display 1
-          //    IDD2 - Virtual display 2
-          //
-          // You can have the following topology:
-          //    [[AM, IDD1]]
-          // but not this:
-          //    [[AM, IDD2]]
-          //
-          // Windows API will just default to:
-          //    [[AM, IDD1]]
-          // even if you provide the second variant. Windows API will think
-          // it's OK and just return ERROR_SUCCESS in this case and there is
-          // nothing you can do. Even the Windows' settings app will not
-          // be able to set the desired topology.
-          //
-          // There seems to be a workaround - you need to make sure the IDD1
-          // device is used somewhere else in the topology, like:
-          //    [[AM, IDD2], [IDD1]]
-          //
-          // However, since we have this bug an additional sanity check is needed
-          // regardless of what Windows report back to us.
-          DD_LOG(error) << "Failed to change topology due to Windows bug or because the display is in deep sleep!";
         }
-      } else {
-        DD_LOG(error) << "Failed to get updated topology!";
+
+        // Windows may legally adjust the requested topology (e.g. duplicate member preference
+        // or devices in deep sleep). Accept the OS-chosen valid topology and proceed,
+        // allowing follow-up mode changes to reconcile settings.
+        DD_LOG(warning) << "Requested topology differs from applied topology; proceeding with OS-selected topology.\n"
+                        << "  - requested: " << toJson(new_topology, JSON_COMPACT) << "\n"
+                        << "  - applied:   " << toJson(updated_topology, JSON_COMPACT);
+        return true;
       }
 
+      DD_LOG(error) << "Failed to get updated topology!";
+
       // Revert back to the original topology
-      const UINT32 flags {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE | SDC_VIRTUAL_MODE_AWARE};
+      const UINT32 flags {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_VIRTUAL_MODE_AWARE};
       static_cast<void>(m_w_api->setDisplayConfig(original_data->m_paths, original_data->m_modes, flags));  // Return value does not matter as we are trying out best to undo
     }
 

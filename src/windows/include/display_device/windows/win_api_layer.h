@@ -45,5 +45,11 @@ namespace display_device {
 
     /** For details @see WinApiLayerInterface::getDisplayScale */
     [[nodiscard]] std::optional<Rational> getDisplayScale(const std::string &display_name, const DISPLAYCONFIG_SOURCE_MODE &source_mode) const override;
+
+    /** For details @see WinApiLayerInterface::getPreferredResolution */
+    [[nodiscard]] std::optional<Resolution> getPreferredResolution(const DISPLAYCONFIG_PATH_INFO &path) const override;
+
+    /** For details @see WinApiLayerInterface::getSupportedDisplayModes */
+    [[nodiscard]] std::vector<DisplayMode> getSupportedDisplayModes(const DISPLAYCONFIG_PATH_INFO &path) const override;
   };
 }  // namespace display_device

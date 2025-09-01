@@ -50,6 +50,9 @@ namespace display_device {
     /** For details @see WinDisplayDeviceInterface::setDisplayModes */
     [[nodiscard]] bool setDisplayModes(const DeviceDisplayModeMap &modes) override;
 
+    /** For details @see WinDisplayDeviceInterface::setDisplayModesTemporary */
+    [[nodiscard]] bool setDisplayModesTemporary(const DeviceDisplayModeMap &modes) override;
+
     /** For details @see WinDisplayDeviceInterface::isPrimary */
     [[nodiscard]] bool isPrimary(const std::string &device_id) const override;
 
@@ -61,6 +64,9 @@ namespace display_device {
 
     /** For details @see WinDisplayDeviceInterface::setHdrStates */
     [[nodiscard]] bool setHdrStates(const HdrStateMap &states) override;
+
+    /** For details @see WinDisplayDeviceInterface::restoreMonitorSettings */
+    [[nodiscard]] bool restoreMonitorSettings() override;
 
   private:
     std::shared_ptr<WinApiLayerInterface> m_w_api;

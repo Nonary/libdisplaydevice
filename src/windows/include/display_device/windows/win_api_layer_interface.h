@@ -196,5 +196,24 @@ namespace display_device {
      * @examples_end
      */
     [[nodiscard]] virtual std::optional<Rational> getDisplayScale(const std::string &display_name, const DISPLAYCONFIG_SOURCE_MODE &source_mode) const = 0;
+
+    /**
+     * @brief Get preferred resolution for a display target of the specified path.
+     * @param path Target path to query.
+     * @returns Preferred resolution if available, std::nullopt otherwise.
+     */
+    [[nodiscard]] virtual std::optional<Resolution> getPreferredResolution(const DISPLAYCONFIG_PATH_INFO &path) const = 0;
+
+    /**
+     * @brief Enumerate supported display modes (resolution + refresh) for the specified path.
+     *
+     * Uses the OS to query the list of supported graphics modes for the target display
+     * referenced by the provided path. The returned list can include duplicate entries
+     * and modes with different refresh rates for the same resolution.
+     *
+     * @param path Target path to enumerate modes for.
+     * @returns A list of supported modes; empty if enumeration failed.
+     */
+    [[nodiscard]] virtual std::vector<DisplayMode> getSupportedDisplayModes(const DISPLAYCONFIG_PATH_INFO &path) const = 0;
   };
 }  // namespace display_device

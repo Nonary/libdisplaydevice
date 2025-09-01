@@ -408,7 +408,7 @@ namespace display_device::win_utils {
     DD_LOG(debug) << "Got modes in modeGuardFn:\n"
                   << toJson(modes);
     return [&win_dd, modes]() {
-      if (!win_dd.setDisplayModes(modes)) {
+      if (!win_dd.setDisplayModesTemporary(modes)) {
         DD_LOG(error) << "failed to revert display modes in modeGuardFn! Used the following modes:\n"
                       << toJson(modes);
       }

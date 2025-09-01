@@ -140,6 +140,27 @@ namespace display_device {
     [[nodiscard]] virtual bool setDisplayModes(const DeviceDisplayModeMap &modes) = 0;
 
     /**
+     * @brief Set new display modes for the devices without saving to the OS database.
+     *
+     * This temporarily applies the requested display modes (session only). It uses the same
+     * relaxed/strict strategy as setDisplayModes but omits persistence flags.
+     *
+     * @param modes A map of modes to set.
+     * @returns True if modes were set, false otherwise.
+     */
+    [[nodiscard]] virtual bool setDisplayModesTemporary(const DeviceDisplayModeMap &modes) = 0;
+
+    /**
+     * @brief Restore display configuration from the OS database.
+     *
+     * Applies current settings stored by Windows (registry) using
+     * SDC_APPLY | SDC_USE_DATABASE_CURRENT.
+     *
+     * @returns True on success, false otherwise.
+     */
+    [[nodiscard]] virtual bool restoreMonitorSettings() = 0;
+
+    /**
      * @brief Check whether the specified device is primary.
      * @param device_id A device to perform the check for.
      * @returns True if the device is primary, false otherwise.

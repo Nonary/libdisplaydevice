@@ -114,4 +114,15 @@ namespace display_device {
 
     return display_name;
   }
+
+  bool WinDisplayDevice::restoreMonitorSettings() {
+    // Apply the settings currently stored by Windows (registry/database)
+    const UINT32 flags {SDC_APPLY | SDC_USE_DATABASE_CURRENT | SDC_VIRTUAL_MODE_AWARE};
+    const LONG result {m_w_api->setDisplayConfig({}, {}, flags)};
+    if (result != ERROR_SUCCESS) {
+      DD_LOG(error) << m_w_api->getErrorString(result) << " failed to restore monitor settings from database!";
+      return false;
+    }
+    return true;
+  }
 }  // namespace display_device

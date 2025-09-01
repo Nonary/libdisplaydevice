@@ -20,6 +20,8 @@ namespace display_device {
     MOCK_METHOD(std::optional<HdrState>, getHdrState, (const DISPLAYCONFIG_PATH_INFO &), (const, override));
     MOCK_METHOD(bool, setHdrState, (const DISPLAYCONFIG_PATH_INFO &, HdrState), (override));
     MOCK_METHOD(std::optional<Rational>, getDisplayScale, (const std::string &, const DISPLAYCONFIG_SOURCE_MODE &), (const, override));
+    MOCK_METHOD(std::optional<Resolution>, getPreferredResolution, (const DISPLAYCONFIG_PATH_INFO &), (const, override));
+    MOCK_METHOD(std::vector<DisplayMode>, getSupportedDisplayModes, (const DISPLAYCONFIG_PATH_INFO &), (const, override));
   };
 }  // namespace display_device
 

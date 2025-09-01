@@ -98,13 +98,6 @@ namespace display_device {
       return ApplyResult::HdrStatePrepFailed;
     }
 
-    // We will always keep the new state persistently, even if there are no new meaningful changes, because
-    // we want to preserve the initial state for consistency.
-    if (!m_persistence_state->persistState(new_state)) {
-      DD_LOG(error) << "Failed to save reverted settings! Undoing everything...";
-      return ApplyResult::PersistenceSaveFailed;
-    }
-
     // We can only release the context now as nothing else can fail.
     if (release_context) {
       m_audio_context_api->release();
@@ -115,6 +108,13 @@ namespace display_device {
     primary_guard.set_active(false);
     mode_guard.set_active(false);
     hdr_state_guard.set_active(false);
+
+     // Persist state so we can reliably revert later.
+    if (!m_persistence_state->persistState(new_state)) {
+      DD_LOG(error) << "Failed to persist display device state after apply!";
+      return ApplyResult::PersistenceSaveFailed;
+    }
+
     return ApplyResult::Ok;
   }
 
@@ -197,11 +197,23 @@ namespace display_device {
         DD_LOG(error) << "Failed to apply new configuration, because a new topology could not be set!";
         return std::nullopt;
       }
+      // Fetch the actually applied topology and use it as the operative state going forward.
+      const auto applied_topology {m_dd_api->getCurrentTopology()};
+      if (!m_dd_api->isTopologyValid(applied_topology)) {
+        DD_LOG(error) << "Failed to get applied topology after setTopology!";
+        return std::nullopt;
+      }
+      if (!m_dd_api->isTopologyTheSame(new_topology, applied_topology)) {
+        DD_LOG(warning) << "Applied topology differs from requested topology. Using applied topology for subsequent steps.";
+      }
 
       // We can release the context later on if everything is successful as we are switching back to the non-stripped initial state.
-      release_context = m_dd_api->isTopologyTheSame(new_state.m_initial.m_topology, new_topology) && audio_is_captured;
+      release_context = m_dd_api->isTopologyTheSame(new_state.m_initial.m_topology, applied_topology) && audio_is_captured;
+      new_state.m_modified.m_topology = applied_topology;
+      return std::make_tuple(new_state, device_to_configure, additional_devices_to_configure);
     }
 
+    // No topology change needed; retain computed topology as operative one.
     new_state.m_modified.m_topology = new_topology;
     return std::make_tuple(new_state, device_to_configure, additional_devices_to_configure);
   }
@@ -280,7 +292,7 @@ namespace display_device {
     const auto try_change {[&](const DeviceDisplayModeMap &new_modes, const auto info_preamble, const auto error_log) {
       if (current_display_modes != new_modes) {
         DD_LOG(info) << info_preamble << toJson(new_modes);
-        if (!m_dd_api->setDisplayModes(new_modes)) {
+        if (!m_dd_api->setDisplayModesTemporary(new_modes)) {
           system_settings_touched = true;
           DD_LOG(error) << error_log;
           return false;
