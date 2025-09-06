@@ -590,4 +590,11 @@ namespace display_device {
     DD_LOG(error) << "Failed to set display mode(-s) completely (temporary apply)!";
     return false;
   }
+
+  bool WinDisplayDevice::setDisplayModesWithFallback(const DeviceDisplayModeMap &modes) {
+    // The setDisplayModes implementation already performs best-effort fallback
+    // by trying relaxed apply, enumerating closest supported modes and aspect
+    // ratio constrained fallbacks before strict apply. Reuse it here.
+    return setDisplayModes(modes);
+  }
 }  // namespace display_device

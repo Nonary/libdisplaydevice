@@ -151,6 +151,18 @@ namespace display_device {
     [[nodiscard]] virtual bool setDisplayModesTemporary(const DeviceDisplayModeMap &modes) = 0;
 
     /**
+     * @brief Set new display modes for the devices using best-effort fallback.
+     *
+     * Behaves like setDisplayModes but is explicitly allowed to fall back to the
+     * closest supported mode per device when an exact match cannot be applied.
+     * Implementations should persist the final applied modes.
+     *
+     * @param modes A map of modes to set.
+     * @returns True if modes were set, false otherwise.
+     */
+    [[nodiscard]] virtual bool setDisplayModesWithFallback(const DeviceDisplayModeMap &modes) = 0;
+
+    /**
      * @brief Restore display configuration from the OS database.
      *
      * Applies current settings stored by Windows (registry) using

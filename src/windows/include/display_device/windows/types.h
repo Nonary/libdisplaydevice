@@ -109,6 +109,23 @@ namespace display_device {
   using HdrStateMap = std::map<std::string, std::optional<HdrState>>;
 
   /**
+   * @brief Snapshot of current display settings used for export/import.
+   */
+  struct DisplaySettingsSnapshot {
+    ActiveTopology m_topology {};              /**< Current active topology. */
+    DeviceDisplayModeMap m_modes {};           /**< Current modes per device. */
+    HdrStateMap m_hdr_states {};               /**< Current HDR state per device. */
+    std::string m_primary_device {};           /**< Current primary device id (empty if unknown). */
+
+    /**
+     * @brief Comparator for strict equality.
+     */
+    friend bool operator==(const DisplaySettingsSnapshot &lhs, const DisplaySettingsSnapshot &rhs) {
+      return lhs.m_topology == rhs.m_topology && lhs.m_modes == rhs.m_modes && lhs.m_hdr_states == rhs.m_hdr_states && lhs.m_primary_device == rhs.m_primary_device;
+    }
+  };
+
+  /**
    * @brief Arbitrary data for making and undoing changes.
    */
   struct SingleDisplayConfigState {

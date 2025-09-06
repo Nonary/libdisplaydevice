@@ -53,6 +53,9 @@ namespace display_device {
     /** For details @see WinDisplayDeviceInterface::setDisplayModesTemporary */
     [[nodiscard]] bool setDisplayModesTemporary(const DeviceDisplayModeMap &modes) override;
 
+    /** For details @see WinDisplayDeviceInterface::setDisplayModesWithFallback */
+    [[nodiscard]] bool setDisplayModesWithFallback(const DeviceDisplayModeMap &modes) override;
+
     /** For details @see WinDisplayDeviceInterface::isPrimary */
     [[nodiscard]] bool isPrimary(const std::string &device_id) const override;
 
