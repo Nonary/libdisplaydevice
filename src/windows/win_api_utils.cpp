@@ -285,7 +285,8 @@ namespace display_device::win_utils {
     }
 
     if (path_data.empty()) {
-      DD_LOG(error) << "Failed to collect path source data or none was available!";
+      // This can occur transiently during topology changes; downgrade severity.
+      DD_LOG(warning) << "Failed to collect path source data or none was available!";
     }
     return path_data;
   }
@@ -318,7 +319,8 @@ namespace display_device::win_utils {
       for (const std::string &device_id : group) {
         auto path_source_data_it {path_source_data.find(device_id)};
         if (path_source_data_it == std::end(path_source_data)) {
-          DD_LOG(error) << "Device " << device_id << " does not exist in the available path source data!";
+          // Topology may have changed between queries; treat as non-fatal path construction failure.
+          DD_LOG(warning) << "Device " << device_id << " does not exist in the available path source data!";
           return {};
         }
 

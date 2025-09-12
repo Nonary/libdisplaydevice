@@ -14,8 +14,7 @@
 #include <cmath>
 #include <cstdint>
 #include <iomanip>
-#include <set>
-#include <tuple>
+#include <unordered_set>
 
 // local includes
 #include "display_device/logging.h"
@@ -25,6 +24,9 @@
 
 namespace display_device {
   namespace {
+    // Forward declaration to allow use before definition within this TU
+    std::string toUtf8(const WinApiLayerInterface &w_api, const std::wstring &value);
+
     /** @brief Dumps the result of @see queryDisplayConfig into a string */
     std::string dumpPath(const DISPLAYCONFIG_PATH_INFO &info) {
       std::ostringstream output;
@@ -229,17 +231,37 @@ namespace display_device {
 
       DWORD required_size_in_bytes {0};
       auto status {RegQueryValueExW(reg_key, L"EDID", nullptr, nullptr, nullptr, &required_size_in_bytes)};
+      if (status == ERROR_FILE_NOT_FOUND || status == ERROR_PATH_NOT_FOUND) {
+        // Many virtual/temporary devices do not expose EDID. This is expected.
+        DD_LOG(verbose) << "EDID registry value not found for this device; proceeding without EDID.";
+        edid.clear();
+        return true;  // not fatal; allow caller to use instance ID only
+      }
       if (status != ERROR_SUCCESS) {
-        DD_LOG(error) << w_api.getErrorString(status) << " \"RegQueryValueExW\" failed when getting size.";
-        return false;
+        // Degrade severity and allow fallback to instance ID/path-based identifier.
+        DD_LOG(warning) << w_api.getErrorString(status) << " \"RegQueryValueExW\" failed when getting size; proceeding without EDID.";
+        edid.clear();
+        return true;
+      }
+
+      if (required_size_in_bytes == 0) {
+        DD_LOG(verbose) << "EDID registry value has zero size; proceeding without EDID.";
+        edid.clear();
+        return true;
       }
 
       edid.resize(required_size_in_bytes);
 
       status = RegQueryValueExW(reg_key, L"EDID", nullptr, nullptr, reinterpret_cast<LPBYTE>(edid.data()), &required_size_in_bytes);
+      if (status == ERROR_FILE_NOT_FOUND || status == ERROR_PATH_NOT_FOUND) {
+        DD_LOG(verbose) << "EDID registry value disappeared during read; proceeding without EDID.";
+        edid.clear();
+        return true;
+      }
       if (status != ERROR_SUCCESS) {
-        DD_LOG(error) << w_api.getErrorString(status) << " \"RegQueryValueExW\" failed when getting data.";
-        return false;
+        DD_LOG(warning) << w_api.getErrorString(status) << " \"RegQueryValueExW\" failed when getting data; proceeding without EDID.";
+        edid.clear();
+        return true;
       }
 
       return !edid.empty();
@@ -297,8 +319,8 @@ namespace display_device {
 
           std::vector<std::byte> edid;
           if (!getDeviceEdid(w_api, dev_info_handle, dev_info_data, edid)) {
-            // Error already logged
-            break;
+            // EDID is optional for our purposes; continue with instance ID only.
+            DD_LOG(verbose) << "EDID not available for device path: " << toUtf8(w_api, dev_interface_path) << "; using instance ID only.";
           }
 
           return std::make_tuple(std::move(instance_id), std::move(edid));
@@ -397,45 +419,68 @@ namespace display_device {
   }
 
   std::optional<PathAndModeData> WinApiLayer::queryDisplayConfig(QueryType type) const {
-    std::vector<DISPLAYCONFIG_PATH_INFO> paths;
-    std::vector<DISPLAYCONFIG_MODE_INFO> modes;
-    LONG result = ERROR_SUCCESS;
+    auto make_flags = [&](bool virtual_mode_aware) -> UINT32 {
+      UINT32 f = type == QueryType::Active ? QDC_ONLY_ACTIVE_PATHS : QDC_ALL_PATHS;
+      if (virtual_mode_aware) {
+        f |= QDC_VIRTUAL_MODE_AWARE;  // supported from W10 onwards, but not everywhere
+      }
+      return f;
+    };
 
-    // When we want to enable/disable displays, we need to get all paths as they will not be active.
-    // This will require some additional filtering of duplicate and otherwise useless paths.
-    UINT32 flags = type == QueryType::Active ? QDC_ONLY_ACTIVE_PATHS : QDC_ALL_PATHS;
-    flags |= QDC_VIRTUAL_MODE_AWARE;  // supported from W10 onwards
+    // Try first with VIRTUAL_MODE_AWARE, then gracefully fall back without it on ERROR_NOT_SUPPORTED/INVALID_PARAMETER
+    for (int attempt = 0; attempt < 2; ++attempt) {
+      const bool use_virtual = (attempt == 0);
+      const UINT32 flags = make_flags(use_virtual);
 
-    do {
-      UINT32 path_count {0};
-      UINT32 mode_count {0};
+      std::vector<DISPLAYCONFIG_PATH_INFO> paths;
+      std::vector<DISPLAYCONFIG_MODE_INFO> modes;
+      LONG result = ERROR_SUCCESS;
 
-      result = GetDisplayConfigBufferSizes(flags, &path_count, &mode_count);
-      if (result != ERROR_SUCCESS) {
-        DD_LOG(error) << getErrorString(result) << " failed to get display paths and modes!";
-        return std::nullopt;
+      do {
+        UINT32 path_count {0};
+        UINT32 mode_count {0};
+
+        result = GetDisplayConfigBufferSizes(flags, &path_count, &mode_count);
+        if (result != ERROR_SUCCESS) {
+          // If the first attempt with VIRTUAL_MODE_AWARE is not supported, retry without it.
+          if (use_virtual && (result == ERROR_NOT_SUPPORTED || result == ERROR_INVALID_PARAMETER)) {
+            DD_LOG(warning) << getErrorString(result) << " while getting buffer sizes with QDC_VIRTUAL_MODE_AWARE; retrying without it.";
+            break;  // break inner do/while and move to next attempt
+          }
+          DD_LOG(error) << getErrorString(result) << " failed to get display paths and modes!";
+          return std::nullopt;
+        }
+
+        paths.resize(path_count);
+        modes.resize(mode_count);
+        result = QueryDisplayConfig(flags, &path_count, paths.data(), &mode_count, modes.data(), nullptr);
+
+        // The function may have returned fewer paths/modes than estimated
+        paths.resize(path_count);
+        modes.resize(mode_count);
+
+        // Loop on ERROR_INSUFFICIENT_BUFFER as topology can change between the calls.
+      } while (result == ERROR_INSUFFICIENT_BUFFER);
+
+      if (result == ERROR_SUCCESS) {
+        DD_LOG(verbose) << "Result of " << (type == QueryType::Active ? "ACTIVE" : "ALL") << " display config query ("
+                        << (use_virtual ? "virtual-aware" : "compat") << "):\n"
+                        << dumpPathsAndModes(paths, modes) << "\n";
+        return PathAndModeData {paths, modes};
       }
 
-      paths.resize(path_count);
-      modes.resize(mode_count);
-      result = QueryDisplayConfig(flags, &path_count, paths.data(), &mode_count, modes.data(), nullptr);
+      // If using virtual mode aware failed due to lack of support, fall back once without it.
+      if (use_virtual && (result == ERROR_NOT_SUPPORTED || result == ERROR_INVALID_PARAMETER)) {
+        DD_LOG(warning) << getErrorString(result) << " while querying with QDC_VIRTUAL_MODE_AWARE; retrying without it.";
+        continue;
+      }
 
-      // The function may have returned fewer paths/modes than estimated
-      paths.resize(path_count);
-      modes.resize(mode_count);
-
-      // It's possible that between the call to GetDisplayConfigBufferSizes and QueryDisplayConfig
-      // that the display state changed, so loop on the case of ERROR_INSUFFICIENT_BUFFER.
-    } while (result == ERROR_INSUFFICIENT_BUFFER);
-
-    if (result != ERROR_SUCCESS) {
       DD_LOG(error) << getErrorString(result) << " failed to query display paths and modes!";
       return std::nullopt;
     }
 
-    DD_LOG(verbose) << "Result of " << (type == QueryType::Active ? "ACTIVE" : "ALL") << " display config query:\n"
-                    << dumpPathsAndModes(paths, modes) << "\n";
-    return PathAndModeData {paths, modes};
+    // Should not reach here, but return nullopt just in case
+    return std::nullopt;
   }
 
   std::string WinApiLayer::getDeviceId(const DISPLAYCONFIG_PATH_INFO &path) const {
@@ -568,14 +613,24 @@ namespace display_device {
   }
 
   LONG WinApiLayer::setDisplayConfig(std::vector<DISPLAYCONFIG_PATH_INFO> paths, std::vector<DISPLAYCONFIG_MODE_INFO> modes, UINT32 flags) {
-    // std::vector::data() "may or may not return a null pointer, if size() is 0", therefore we want to enforce nullptr...
-    return ::SetDisplayConfig(
-      paths.size(),
-      paths.empty() ? nullptr : paths.data(),
-      modes.size(),
-      modes.empty() ? nullptr : modes.data(),
-      flags
-    );
+    // std::vector::data() may return nullptr only if we enforce it for size()==0
+    auto call = [&](UINT32 f) -> LONG {
+      return ::SetDisplayConfig(
+        static_cast<UINT32>(paths.size()),
+        paths.empty() ? nullptr : paths.data(),
+        static_cast<UINT32>(modes.size()),
+        modes.empty() ? nullptr : modes.data(),
+        f);
+    };
+
+    LONG result = call(flags);
+    if ((result == ERROR_NOT_SUPPORTED || result == ERROR_INVALID_PARAMETER) && (flags & SDC_VIRTUAL_MODE_AWARE)) {
+      // Fallback for environments that don't support virtual-mode-aware operations
+      const UINT32 compat_flags = (flags & ~SDC_VIRTUAL_MODE_AWARE);
+      DD_LOG(warning) << getErrorString(result) << " while applying with SDC_VIRTUAL_MODE_AWARE; retrying without it.";
+      result = call(compat_flags);
+    }
+    return result;
   }
 
   std::optional<HdrState> WinApiLayer::getHdrState(const DISPLAYCONFIG_PATH_INFO &path) const {
@@ -644,6 +699,81 @@ namespace display_device {
     return true;
   }
 
+  std::optional<Resolution> WinApiLayer::getPreferredResolution(const DISPLAYCONFIG_PATH_INFO &path) const {
+    DISPLAYCONFIG_TARGET_PREFERRED_MODE preferred = {};
+    preferred.header.adapterId = path.targetInfo.adapterId;
+    preferred.header.id = path.targetInfo.id;
+    preferred.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_PREFERRED_MODE;
+    preferred.header.size = sizeof(preferred);
+
+    LONG result {DisplayConfigGetDeviceInfo(&preferred.header)};
+    if (result != ERROR_SUCCESS) {
+      DD_LOG(error) << getErrorString(result) << " failed to get preferred target mode!";
+      return std::nullopt;
+    }
+
+    const auto &active = preferred.targetMode.targetVideoSignalInfo.activeSize;
+    if (active.cx == 0 || active.cy == 0) {
+      DD_LOG(debug) << "Preferred mode returned zero size.";
+      return std::nullopt;
+    }
+
+    return Resolution {static_cast<unsigned int>(active.cx), static_cast<unsigned int>(active.cy)};
+  }
+
+  std::vector<DisplayMode> WinApiLayer::getSupportedDisplayModes(const DISPLAYCONFIG_PATH_INFO &path) const {
+    std::vector<DisplayMode> supported;
+
+    const std::string display_name = getDisplayName(path);
+    if (display_name.empty()) {
+      // Inactive target may not have a display name; return empty list.
+      DD_LOG(debug) << "Display name is empty; cannot enumerate modes for inactive target.";
+      return supported;
+    }
+
+    // Enumerate all available graphics modes for this display device.
+    // Use the ANSI variant explicitly as getDisplayName returns UTF-8.
+    DEVMODEA dm {};
+    dm.dmSize = sizeof(dm);
+
+    // Keep a simple set to avoid duplicates.
+    struct Key {
+      unsigned int w, h, f;
+      bool operator==(const Key &o) const { return w == o.w && h == o.h && f == o.f; }
+    };
+    struct KeyHash {
+      std::size_t operator()(const Key &k) const noexcept {
+        return (static_cast<std::size_t>(k.w) << 32) ^ (static_cast<std::size_t>(k.h) << 16) ^ static_cast<std::size_t>(k.f);
+      }
+    };
+
+    std::unordered_set<Key, KeyHash> seen;
+
+    for (DWORD i = 0; EnumDisplaySettingsExA(display_name.c_str(), i, &dm, 0) == TRUE; ++i) {
+      if (!(dm.dmFields & (DM_PELSWIDTH | DM_PELSHEIGHT))) {
+        continue;
+      }
+
+      unsigned int w = static_cast<unsigned int>(dm.dmPelsWidth);
+      unsigned int h = static_cast<unsigned int>(dm.dmPelsHeight);
+      unsigned int f = 0;
+      if (dm.dmFields & DM_DISPLAYFREQUENCY) {
+        f = static_cast<unsigned int>(dm.dmDisplayFrequency);
+      }
+
+      if (w == 0 || h == 0) {
+        continue;
+      }
+
+      Key key {w, h, f};
+      if (seen.insert(key).second) {
+        supported.push_back(DisplayMode {Resolution {w, h}, Rational {f, 1}});
+      }
+    }
+
+    return supported;
+  }
+
   std::optional<Rational> WinApiLayer::getDisplayScale(const std::string &display_name, const DISPLAYCONFIG_SOURCE_MODE &source_mode) const {
     // Note: implementation based on https://stackoverflow.com/a/74046173
     struct EnumData {
@@ -688,74 +818,5 @@ namespace display_device {
 
     const auto width {static_cast<double>(*enum_data.m_width) / static_cast<double>(source_mode.width)};
     return Rational {static_cast<unsigned int>(std::round((static_cast<double>(GetDpiForSystem()) / 96. / width) * 100)), 100};
-  }
-
-  std::optional<Resolution> WinApiLayer::getPreferredResolution(const DISPLAYCONFIG_PATH_INFO &path) const {
-    DISPLAYCONFIG_TARGET_PREFERRED_MODE preferred = {};
-    preferred.header.adapterId = path.targetInfo.adapterId;
-    preferred.header.id = path.targetInfo.id;
-    preferred.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_PREFERRED_MODE;
-    preferred.header.size = sizeof(preferred);
-
-    LONG result {DisplayConfigGetDeviceInfo(&preferred.header)};
-    if (result != ERROR_SUCCESS) {
-      DD_LOG(debug) << getErrorString(result) << " failed to get target preferred mode!";
-      return std::nullopt;
-    }
-
-    // DISPLAYCONFIG_TARGET_PREFERRED_MODE::width/height represent preferred mode dimensions
-    if (preferred.width == 0 || preferred.height == 0) {
-      return std::nullopt;
-    }
-
-    return Resolution {static_cast<unsigned int>(preferred.width), static_cast<unsigned int>(preferred.height)};
-  }
-
-  std::vector<DisplayMode> WinApiLayer::getSupportedDisplayModes(const DISPLAYCONFIG_PATH_INFO &path) const {
-    std::vector<DisplayMode> modes;
-
-    const std::string display_name {getDisplayName(path)};
-    if (display_name.empty()) {
-      DD_LOG(debug) << "Failed to get display name for path while enumerating supported modes.";
-      return modes;
-    }
-
-    // Use EnumDisplaySettingsExA to enumerate raw modes for the logical display
-    // Note: dmDisplayFrequency is integer Hz; fractional rates are approximated by Windows
-    DEVMODEA dev_mode {};
-    dev_mode.dmSize = sizeof(DEVMODEA);
-
-    std::set<std::tuple<unsigned int, unsigned int, unsigned int>> seen;  // (w,h,Hz)
-    for (DWORD i = 0; ; ++i) {
-      ZeroMemory(&dev_mode, sizeof(DEVMODEA));
-      dev_mode.dmSize = sizeof(DEVMODEA);
-
-      if (!EnumDisplaySettingsExA(display_name.c_str(), i, &dev_mode, EDS_RAWMODE)) {
-        break;  // No more modes
-      }
-
-      if (!(dev_mode.dmFields & (DM_PELSWIDTH | DM_PELSHEIGHT))) {
-        continue;
-      }
-
-      const unsigned int w = static_cast<unsigned int>(dev_mode.dmPelsWidth);
-      const unsigned int h = static_cast<unsigned int>(dev_mode.dmPelsHeight);
-      unsigned int hz = 0;
-      if (dev_mode.dmFields & DM_DISPLAYFREQUENCY) {
-        hz = static_cast<unsigned int>(dev_mode.dmDisplayFrequency);
-      }
-
-      if (w == 0 || h == 0 || hz == 0) {
-        // Skip invalid/incomplete entries
-        continue;
-      }
-
-      auto key = std::make_tuple(w, h, hz);
-      if (seen.insert(key).second) {
-        modes.push_back(DisplayMode {Resolution {w, h}, Rational {hz, 1}});
-      }
-    }
-
-    return modes;
   }
 }  // namespace display_device
