@@ -112,10 +112,10 @@ namespace display_device {
    * @brief Snapshot of current display settings used for export/import.
    */
   struct DisplaySettingsSnapshot {
-    ActiveTopology m_topology {};              /**< Current active topology. */
-    DeviceDisplayModeMap m_modes {};           /**< Current modes per device. */
-    HdrStateMap m_hdr_states {};               /**< Current HDR state per device. */
-    std::string m_primary_device {};           /**< Current primary device id (empty if unknown). */
+    ActiveTopology m_topology {}; /**< Current active topology. */
+    DeviceDisplayModeMap m_modes {}; /**< Current modes per device. */
+    HdrStateMap m_hdr_states {}; /**< Current HDR state per device. */
+    std::string m_primary_device {}; /**< Current primary device id (empty if unknown). */
 
     /**
      * @brief Comparator for strict equality.

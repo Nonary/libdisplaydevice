@@ -11,8 +11,9 @@
 
 // local includes
 #include "display_device/logging.h"
-#include "display_device/windows/win_api_utils.h"
 #include "display_device/windows/json.h"
+#include "display_device/windows/settings_utils.h"
+#include "display_device/windows/win_api_utils.h"
 
 namespace display_device {
   namespace {
@@ -87,6 +88,10 @@ namespace display_device {
       }
     }
 
+    if (topology.empty()) {
+      // createFullExtendedTopology expects a non-const interface; we avoid extra enumeration plumbing here
+      return win_utils::createFullExtendedTopology(const_cast<WinDisplayDevice &>(*this));
+    }
     return topology;
   }
 

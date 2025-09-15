@@ -109,7 +109,7 @@ namespace display_device {
     mode_guard.set_active(false);
     hdr_state_guard.set_active(false);
 
-     // Persist state so we can reliably revert later.
+    // Persist state so we can reliably revert later.
     if (!m_persistence_state->persistState(new_state)) {
       DD_LOG(error) << "Failed to persist display device state after apply!";
       return ApplyResult::PersistenceSaveFailed;

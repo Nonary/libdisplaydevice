@@ -13,6 +13,7 @@
 #include <boost/uuid/uuid_io.hpp>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <iomanip>
 #include <unordered_set>
 
@@ -163,7 +164,7 @@ namespace display_device {
         DD_LOG(error) << "\"SetupDiGetDeviceInterfaceDetailW\" did not fail, what?!";
         return false;
       } else if (required_size_in_bytes <= 0) {
-        DD_LOG(error) << w_api.getErrorString(static_cast<LONG>(GetLastError())) << " \"SetupDiGetDeviceInterfaceDetailW\" failed while getting size.";
+        DD_LOG(warning) << w_api.getErrorString(static_cast<LONG>(GetLastError())) << " \"SetupDiGetDeviceInterfaceDetailW\" failed while getting size.";
         return false;
       }
 
@@ -175,7 +176,7 @@ namespace display_device {
       detail_data->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W);
 
       if (!SetupDiGetDeviceInterfaceDetailW(dev_info_handle, &dev_interface_data, detail_data, required_size_in_bytes, nullptr, &dev_info_data)) {
-        DD_LOG(error) << w_api.getErrorString(static_cast<LONG>(GetLastError())) << " \"SetupDiGetDeviceInterfaceDetailW\" failed.";
+        DD_LOG(warning) << w_api.getErrorString(static_cast<LONG>(GetLastError())) << " \"SetupDiGetDeviceInterfaceDetailW\" failed.";
         return false;
       }
 
@@ -194,13 +195,13 @@ namespace display_device {
         DD_LOG(error) << "\"SetupDiGetDeviceInstanceIdW\" did not fail, what?!";
         return false;
       } else if (required_size_in_characters <= 0) {
-        DD_LOG(error) << w_api.getErrorString(static_cast<LONG>(GetLastError())) << " \"SetupDiGetDeviceInstanceIdW\" failed while getting size.";
+        DD_LOG(warning) << w_api.getErrorString(static_cast<LONG>(GetLastError())) << " \"SetupDiGetDeviceInstanceIdW\" failed while getting size.";
         return false;
       }
 
       instance_id.resize(required_size_in_characters);
       if (!SetupDiGetDeviceInstanceIdW(dev_info_handle, &dev_info_data, instance_id.data(), instance_id.size(), nullptr)) {
-        DD_LOG(error) << w_api.getErrorString(static_cast<LONG>(GetLastError())) << " \"SetupDiGetDeviceInstanceIdW\" failed.";
+        DD_LOG(warning) << w_api.getErrorString(static_cast<LONG>(GetLastError())) << " \"SetupDiGetDeviceInstanceIdW\" failed.";
         return false;
       }
 
@@ -216,8 +217,9 @@ namespace display_device {
       // We could just directly open the registry key as the path is known, but we can also use the this
       HKEY reg_key {SetupDiOpenDevRegKey(dev_info_handle, &dev_info_data, DICS_FLAG_GLOBAL, 0, DIREG_DEV, KEY_READ)};
       if (reg_key == INVALID_HANDLE_VALUE) {
-        DD_LOG(error) << w_api.getErrorString(static_cast<LONG>(GetLastError())) << " \"SetupDiOpenDevRegKey\" failed.";
-        return false;
+        DD_LOG(warning) << w_api.getErrorString(static_cast<LONG>(GetLastError())) << " \"SetupDiOpenDevRegKey\" failed; proceeding without EDID.";
+        edid.clear();
+        return true;
       }
 
       const auto reg_key_cleanup {
@@ -379,11 +381,11 @@ namespace display_device {
 
       BOOL result {VerifyVersionInfoA(&os_version_info, VER_MAJORVERSION | VER_MINORVERSION | VER_BUILDNUMBER, condition_mask)};
       if (result == FALSE) {
-        DD_LOG(verbose) << w_api.getErrorString(static_cast<LONG>(GetLastError())) << " \"is_W11_24H2_OrAbove\" returned false.";
+        DD_LOG(debug) << "\"is_W11_24H2_OrAbove\" returned false.";
         return false;
       }
 
-      DD_LOG(verbose) << "\"is_W11_24H2_OrAbove\" returned true.";
+      DD_LOG(debug) << "\"is_W11_24H2_OrAbove\" returned true.";
       return true;
     }
   }  // namespace
@@ -420,66 +422,128 @@ namespace display_device {
 
   std::optional<PathAndModeData> WinApiLayer::queryDisplayConfig(QueryType type) const {
     auto make_flags = [&](bool virtual_mode_aware) -> UINT32 {
-      UINT32 f = type == QueryType::Active ? QDC_ONLY_ACTIVE_PATHS : QDC_ALL_PATHS;
+      UINT32 f = (type == QueryType::Active) ? QDC_ONLY_ACTIVE_PATHS : QDC_ALL_PATHS;
       if (virtual_mode_aware) {
-        f |= QDC_VIRTUAL_MODE_AWARE;  // supported from W10 onwards, but not everywhere
+        f |= QDC_VIRTUAL_MODE_AWARE;
       }
       return f;
     };
 
-    // Try first with VIRTUAL_MODE_AWARE, then gracefully fall back without it on ERROR_NOT_SUPPORTED/INVALID_PARAMETER
+    // Simple signature helper to detect topology changes and gate verbose dumps
+    auto make_signature = [](const std::vector<DISPLAYCONFIG_PATH_INFO> &paths, const std::vector<DISPLAYCONFIG_MODE_INFO> &modes) {
+      std::size_t h = paths.size() * 1315423911u ^ modes.size();
+      auto mix = [&](std::size_t v) {
+        h ^= v + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+      };
+      for (const auto &p : paths) {
+        mix(static_cast<std::size_t>(p.sourceInfo.adapterId.HighPart));
+        mix(static_cast<std::size_t>(p.sourceInfo.adapterId.LowPart));
+        mix(static_cast<std::size_t>(p.sourceInfo.id));
+        mix(static_cast<std::size_t>(p.targetInfo.id));
+        mix(static_cast<std::size_t>(p.flags));
+      }
+      for (const auto &m : modes) {
+        mix(static_cast<std::size_t>(m.id));
+        mix(static_cast<std::size_t>(m.infoType));
+      }
+      return h;
+    };
+
+    static std::size_t last_sig = 0;
+
     for (int attempt = 0; attempt < 2; ++attempt) {
       const bool use_virtual = (attempt == 0);
       const UINT32 flags = make_flags(use_virtual);
 
-      std::vector<DISPLAYCONFIG_PATH_INFO> paths;
-      std::vector<DISPLAYCONFIG_MODE_INFO> modes;
-      LONG result = ERROR_SUCCESS;
+      // First get a baseline size
+      UINT32 path_count = 0, mode_count = 0;
+      LONG result = GetDisplayConfigBufferSizes(flags, &path_count, &mode_count);
+      if (result != ERROR_SUCCESS) {
+        if (use_virtual && (result == ERROR_NOT_SUPPORTED || result == ERROR_INVALID_PARAMETER)) {
+          DD_LOG(debug) << getErrorString(result)
+                        << " getting buffer sizes with QDC_VIRTUAL_MODE_AWARE; retrying without it.";
+          continue;  // try compat
+        }
+        DD_LOG(error) << getErrorString(result) << " failed 'to get display buffer size's!";
+        return std::nullopt;
+      }
 
-      do {
-        UINT32 path_count {0};
-        UINT32 mode_count {0};
+      std::vector<DISPLAYCONFIG_PATH_INFO> paths(path_count);
+      std::vector<DISPLAYCONFIG_MODE_INFO> modes(mode_count);
 
-        result = GetDisplayConfigBufferSizes(flags, &path_count, &mode_count);
-        if (result != ERROR_SUCCESS) {
-          // If the first attempt with VIRTUAL_MODE_AWARE is not supported, retry without it.
-          if (use_virtual && (result == ERROR_NOT_SUPPORTED || result == ERROR_INVALID_PARAMETER)) {
-            DD_LOG(warning) << getErrorString(result) << " while getting buffer sizes with QDC_VIRTUAL_MODE_AWARE; retrying without it.";
-            break;  // break inner do/while and move to next attempt
+      // Bounded retry with backoff if topology is changing.
+      constexpr int kMaxTries = 9;
+      for (int tries = 0; tries < kMaxTries; ++tries) {
+        UINT32 pc = static_cast<UINT32>(paths.size());
+        UINT32 mc = static_cast<UINT32>(modes.size());
+        result = QueryDisplayConfig(flags, &pc, paths.data(), &mc, modes.data(), nullptr);
+
+        if (result == ERROR_SUCCESS) {
+          paths.resize(pc);
+          modes.resize(mc);
+          const auto sig_now = make_signature(paths, modes);
+          if (sig_now != last_sig) {
+            DD_LOG(verbose) << "Result of " << (type == QueryType::Active ? "ACTIVE" : "ALL")
+                            << " display config (" << (use_virtual ? "virtual-aware" : "compat")
+                            << "):\n"
+                            << dumpPathsAndModes(paths, modes) << "\n";
+            last_sig = sig_now;
           }
-          DD_LOG(error) << getErrorString(result) << " failed to get display paths and modes!";
-          return std::nullopt;
+          return PathAndModeData {paths, modes};
         }
 
-        paths.resize(path_count);
-        modes.resize(mode_count);
-        result = QueryDisplayConfig(flags, &path_count, paths.data(), &mode_count, modes.data(), nullptr);
+        if (result == ERROR_INSUFFICIENT_BUFFER) {
+          // pc/mc now contain the required sizes. Grow (only grow) and retry, no new sizes call.
+          bool grew = false;
+          if (pc > paths.size()) {
+            paths.resize(pc);
+            grew = true;
+          }
+          if (mc > modes.size()) {
+            modes.resize(mc);
+            grew = true;
+          }
 
-        // The function may have returned fewer paths/modes than estimated
-        paths.resize(path_count);
-        modes.resize(mode_count);
+          // If we didn't grow, topology might be flapping—recompute sizes once.
+          if (!grew) {
+            result = GetDisplayConfigBufferSizes(flags, &path_count, &mode_count);
+            if (result != ERROR_SUCCESS) {
+              break;
+            }
+            if (path_count > paths.size()) {
+              paths.resize(path_count);
+            }
+            if (mode_count > modes.size()) {
+              modes.resize(mode_count);
+            }
+          }
 
-        // Loop on ERROR_INSUFFICIENT_BUFFER as topology can change between the calls.
-      } while (result == ERROR_INSUFFICIENT_BUFFER);
+          // Backoff (exponential, clamped)
+          const DWORD delay = std::min<DWORD>(500, 25u * (1u << tries));
+          ::Sleep(delay);
+          continue;
+        }
 
-      if (result == ERROR_SUCCESS) {
-        DD_LOG(verbose) << "Result of " << (type == QueryType::Active ? "ACTIVE" : "ALL") << " display config query ("
-                        << (use_virtual ? "virtual-aware" : "compat") << "):\n"
-                        << dumpPathsAndModes(paths, modes) << "\n";
-        return PathAndModeData {paths, modes};
+        if (use_virtual && (result == ERROR_NOT_SUPPORTED || result == ERROR_INVALID_PARAMETER)) {
+          DD_LOG(debug) << getErrorString(result)
+                        << " querying with QDC_VIRTUAL_MODE_AWARE; retrying without it.";
+          break;  // break inner; outer loop will try compat
+        }
+
+        // Other errors: log and bail
+        DD_LOG(error) << getErrorString(result)
+                      << " failed to query display paths and modes!";
+        return std::nullopt;
       }
 
-      // If using virtual mode aware failed due to lack of support, fall back once without it.
-      if (use_virtual && (result == ERROR_NOT_SUPPORTED || result == ERROR_INVALID_PARAMETER)) {
-        DD_LOG(warning) << getErrorString(result) << " while querying with QDC_VIRTUAL_MODE_AWARE; retrying without it.";
+      // If we exit the retry loop without success, try compat once (if we were virtual)
+      if (use_virtual) {
         continue;
       }
-
-      DD_LOG(error) << getErrorString(result) << " failed to query display paths and modes!";
+      DD_LOG(error) << "Giving up after retries while querying display config.";
       return std::nullopt;
     }
 
-    // Should not reach here, but return nullopt just in case
     return std::nullopt;
   }
 
@@ -620,7 +684,8 @@ namespace display_device {
         paths.empty() ? nullptr : paths.data(),
         static_cast<UINT32>(modes.size()),
         modes.empty() ? nullptr : modes.data(),
-        f);
+        f
+      );
     };
 
     LONG result = call(flags);
@@ -739,8 +804,12 @@ namespace display_device {
     // Keep a simple set to avoid duplicates.
     struct Key {
       unsigned int w, h, f;
-      bool operator==(const Key &o) const { return w == o.w && h == o.h && f == o.f; }
+
+      bool operator==(const Key &o) const {
+        return w == o.w && h == o.h && f == o.f;
+      }
     };
+
     struct KeyHash {
       std::size_t operator()(const Key &k) const noexcept {
         return (static_cast<std::size_t>(k.w) << 32) ^ (static_cast<std::size_t>(k.h) << 16) ^ static_cast<std::size_t>(k.f);

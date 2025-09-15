@@ -33,7 +33,8 @@ namespace display_device {
     const auto &cached_state {m_persistence_state->getState()};
     const auto current_topology {m_dd_api->getCurrentTopology()};
     if (!m_dd_api->isTopologyValid(current_topology)) {
-      DD_LOG(error) << "Topology prior to revert is invalid:\n" << toJson(current_topology);
+      DD_LOG(error) << "Topology prior to revert is invalid:\n"
+                    << toJson(current_topology);
       return RevertResult::TopologyIsInvalid;
     }
 
@@ -75,7 +76,8 @@ namespace display_device {
     // 1) Ensure we are back on the initial topology used as baseline.
     if (!m_dd_api->isTopologyTheSame(current_topology, state.m_initial.m_topology)) {
       system_settings_touched = true;
-      DD_LOG(info) << "Reverting topology to initial:\n" << toJson(state.m_initial.m_topology);
+      DD_LOG(info) << "Reverting topology to initial:\n"
+                   << toJson(state.m_initial.m_topology);
       if (!m_dd_api->setTopology(state.m_initial.m_topology)) {
         DD_LOG(error) << "Failed switching topology back to initial!";
         return RevertResult::SwitchingTopologyFailed;
