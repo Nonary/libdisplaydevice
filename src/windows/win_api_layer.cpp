@@ -809,8 +809,31 @@ namespace display_device {
     }
 
     if (result != ERROR_SUCCESS) {
-      stackRecovery();
-      result = applyRequestedConfig(flags, "post-recovery setDisplayConfig");
+      bool have_paths = false;
+      auto forceEnumeration = [&](QueryType type, const char *label) -> bool {
+        const auto display_data = queryDisplayConfig(type);
+        if (!display_data || display_data->m_paths.empty()) {
+          return false;
+        }
+        have_paths = true;
+        static constexpr UINT32 reenum_flags = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_FORCE_MODE_ENUMERATION;
+        const LONG reenum_result = callWithFlags(display_data->m_paths, display_data->m_modes, reenum_flags, label);
+        if (reenum_result == ERROR_SUCCESS) {
+          result = applyRequestedConfig(flags, "post-force-enumeration apply");
+        } else {
+          result = reenum_result;
+        }
+        return true;
+      };
+
+      if (!forceEnumeration(QueryType::All, "forced mode enumeration")) {
+        static_cast<void>(forceEnumeration(QueryType::Active, "forced mode enumeration (active-only)"));
+      }
+
+      if (!have_paths && result != ERROR_SUCCESS) {
+        stackRecovery();
+        result = applyRequestedConfig(flags, "post-recovery setDisplayConfig");
+      }
     }
 
     return result;
