@@ -251,8 +251,47 @@ namespace display_device::win_utils {
 
   std::tuple<ActiveTopology, std::string, std::set<std::string>> computeNewTopologyAndMetadata(const SingleDisplayConfiguration::DevicePreparation device_prep, const std::string &device_id, const SingleDisplayConfigState::Initial &initial_state) {
     const bool configuring_unspecified_devices {device_id.empty()};
-    const auto device_to_configure {configuring_unspecified_devices ? *std::begin(initial_state.m_primary_devices) : device_id};
-    auto additional_devices_to_configure {configuring_unspecified_devices ? std::set<std::string> {std::next(std::begin(initial_state.m_primary_devices)), std::end(initial_state.m_primary_devices)} : tryGetOtherDevicesInTheSameGroup(initial_state.m_topology, device_to_configure)};
+    std::string device_to_configure {device_id};
+    std::set<std::string> additional_devices_to_configure;
+
+    if (configuring_unspecified_devices) {
+      bool device_selected {false};
+
+      for (const auto &group : initial_state.m_topology) {
+        for (const auto &candidate : group) {
+          if (initial_state.m_primary_devices.contains(candidate)) {
+            device_to_configure = candidate;
+            device_selected = true;
+            break;
+          }
+        }
+
+        if (device_selected) {
+          break;
+        }
+      }
+
+      if (!device_selected) {
+        if (!initial_state.m_primary_devices.empty()) {
+          device_to_configure = *initial_state.m_primary_devices.begin();
+          device_selected = true;
+        } else {
+          for (const auto &group : initial_state.m_topology) {
+            if (!group.empty()) {
+              device_to_configure = group.front();
+              device_selected = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (device_selected && !device_to_configure.empty()) {
+        additional_devices_to_configure = tryGetOtherDevicesInTheSameGroup(initial_state.m_topology, device_to_configure);
+      }
+    } else {
+      additional_devices_to_configure = tryGetOtherDevicesInTheSameGroup(initial_state.m_topology, device_to_configure);
+    }
     DD_LOG(info) << "Will compute new display device topology from the following input:\n"
                  << "  - initial topology: " << toJson(initial_state.m_topology, JSON_COMPACT) << "\n"
                  << "  - initial primary devices: " << toJson(initial_state.m_primary_devices, JSON_COMPACT) << "\n"
@@ -260,9 +299,19 @@ namespace display_device::win_utils {
                  << "  - device to configure: " << toJson(device_to_configure, JSON_COMPACT) << "\n"
                  << "  - additional devices to configure: " << toJson(additional_devices_to_configure, JSON_COMPACT);
 
-    const auto new_topology {computeNewTopology(device_prep, configuring_unspecified_devices, device_to_configure, additional_devices_to_configure, initial_state.m_topology)};
-    additional_devices_to_configure = tryGetOtherDevicesInTheSameGroup(new_topology, device_to_configure);
-    return std::make_tuple(new_topology, device_to_configure, additional_devices_to_configure);
+    auto new_topology {computeNewTopology(device_prep, configuring_unspecified_devices, device_to_configure, additional_devices_to_configure, initial_state.m_topology)};
+    const auto flattened_new_topology {flattenTopology(new_topology)};
+
+    if (!device_to_configure.empty() && !flattened_new_topology.contains(device_to_configure)) {
+      if (!flattened_new_topology.empty()) {
+        device_to_configure = *flattened_new_topology.begin();
+      } else {
+        device_to_configure.clear();
+      }
+    }
+
+    additional_devices_to_configure = device_to_configure.empty() ? std::set<std::string> {} : tryGetOtherDevicesInTheSameGroup(new_topology, device_to_configure);
+    return std::make_tuple(std::move(new_topology), std::move(device_to_configure), std::move(additional_devices_to_configure));
   }
 
   DeviceDisplayModeMap computeNewDisplayModes(const std::optional<Resolution> &resolution, const std::optional<FloatingPoint> &refresh_rate, const bool configuring_primary_devices, const std::string &device_to_configure, const std::set<std::string> &additional_devices_to_configure, const DeviceDisplayModeMap &original_modes) {
