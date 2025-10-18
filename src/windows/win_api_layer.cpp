@@ -797,7 +797,7 @@ namespace display_device {
 
       const auto display_data = queryDisplayConfig(QueryType::All);
       if (display_data && !display_data->m_paths.empty()) {
-        static constexpr UINT32 reenum_flags = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_FORCE_MODE_ENUMERATION;
+        static constexpr UINT32 reenum_flags = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_FORCE_MODE_ENUMERATION | SDC_VIRTUAL_MODE_AWARE;
         static_cast<void>(callWithFlags(display_data->m_paths, display_data->m_modes, reenum_flags, "post-recovery forced mode enumeration"));
       }
     };
@@ -816,7 +816,7 @@ namespace display_device {
           return false;
         }
         have_paths = true;
-        static constexpr UINT32 reenum_flags = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_FORCE_MODE_ENUMERATION;
+        static constexpr UINT32 reenum_flags = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_FORCE_MODE_ENUMERATION | SDC_VIRTUAL_MODE_AWARE;
         const LONG reenum_result = callWithFlags(display_data->m_paths, display_data->m_modes, reenum_flags, label);
         if (reenum_result == ERROR_SUCCESS) {
           result = applyRequestedConfig(flags, "post-force-enumeration apply");
