@@ -347,14 +347,32 @@ namespace display_device {
   }
 
   [[nodiscard]] bool SettingsManager::prepareHdrStates(const SingleDisplayConfiguration &config, const std::string &device_to_configure, const std::set<std::string> &additional_devices_to_configure, DdGuardFn &guard_fn, SingleDisplayConfigState &new_state, bool &system_settings_touched) {
+    const auto devices_in_topology {win_utils::flattenTopology(new_state.m_modified.m_topology)};
+    const auto prune_hdr_states_to_topology = [&devices_in_topology](HdrStateMap states) {
+      if (states.empty()) {
+        return states;
+      }
+
+      for (auto it = states.begin(); it != states.end();) {
+        if (!devices_in_topology.contains(it->first)) {
+          DD_LOG(info) << "Dropping cached HDR state for device " << it->first << " because it is not part of the current topology.";
+          it = states.erase(it);
+        } else {
+          ++it;
+        }
+      }
+
+      return states;
+    };
+
     const auto &cached_state {m_persistence_state->getState()};
-    const auto cached_hdr_states {cached_state ? cached_state->m_modified.m_original_hdr_states : HdrStateMap {}};
+    const auto cached_hdr_states {prune_hdr_states_to_topology(cached_state ? cached_state->m_modified.m_original_hdr_states : HdrStateMap {})};
     const bool change_required {config.m_hdr_state};
     const bool might_need_to_restore {!cached_hdr_states.empty()};
 
     HdrStateMap current_hdr_states;
     if (change_required || might_need_to_restore) {
-      current_hdr_states = m_dd_api->getCurrentHdrStates(win_utils::flattenTopology(new_state.m_modified.m_topology));
+      current_hdr_states = m_dd_api->getCurrentHdrStates(devices_in_topology);
       if (current_hdr_states.empty()) {
         DD_LOG(error) << "Failed to get current HDR states!";
         return false;
