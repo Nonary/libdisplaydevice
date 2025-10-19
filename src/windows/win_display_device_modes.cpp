@@ -118,6 +118,15 @@ namespace display_device {
       return static_cast<double>(r.m_numerator) / static_cast<double>(r.m_denominator);
     }
 
+    bool refreshRatesEqual(const Rational &lhs, const Rational &rhs) {
+      if (lhs.m_denominator <= 0 || rhs.m_denominator <= 0) {
+        return false;
+      }
+      const auto lhs_scaled = static_cast<long long>(lhs.m_numerator) * static_cast<long long>(rhs.m_denominator);
+      const auto rhs_scaled = static_cast<long long>(rhs.m_numerator) * static_cast<long long>(lhs.m_denominator);
+      return lhs_scaled == rhs_scaled;
+    }
+
     std::optional<DisplayMode> pickClosestMode(const DisplayMode &requested_mode, const std::vector<DisplayMode> &candidates, bool require_same_aspect) {
       if (candidates.empty()) {
         return std::nullopt;
@@ -220,12 +229,20 @@ namespace display_device {
         auto supported {w_api.getSupportedDisplayModes(*path)};
         const auto preferred_resolution {w_api.getPreferredResolution(*path)};
 
-        const bool requested_is_supported = std::any_of(supported.begin(), supported.end(), [&requested_mode](const DisplayMode &candidate) {
-          return win_utils::fuzzyCompareModes(candidate, requested_mode);
-        });
+        std::optional<DisplayMode> exact_supported_mode;
+        for (const auto &candidate : supported) {
+          if (candidate.m_resolution.m_width == requested_mode.m_resolution.m_width &&
+              candidate.m_resolution.m_height == requested_mode.m_resolution.m_height &&
+              refreshRatesEqual(candidate.m_refresh_rate, requested_mode.m_refresh_rate)) {
+            exact_supported_mode = candidate;
+            break;
+          }
+        }
 
         DisplayMode final_mode {requested_mode};
-        if (!requested_is_supported) {
+        if (exact_supported_mode) {
+          final_mode = *exact_supported_mode;
+        } else {
           auto chosen = pickClosestMode(requested_mode, supported, true);
           if (!chosen) {
             chosen = pickPreferredResolutionMode(requested_mode, supported, preferred_resolution);
