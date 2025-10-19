@@ -268,14 +268,32 @@ namespace display_device {
   }
 
   bool SettingsManager::prepareDisplayModes(const SingleDisplayConfiguration &config, const std::string &device_to_configure, const std::set<std::string> &additional_devices_to_configure, DdGuardFn &guard_fn, SingleDisplayConfigState &new_state, bool &system_settings_touched) {
+    const auto devices_in_topology {win_utils::flattenTopology(new_state.m_modified.m_topology)};
+    const auto prune_modes_to_topology = [&devices_in_topology](DeviceDisplayModeMap modes) {
+      if (modes.empty()) {
+        return modes;
+      }
+
+      for (auto it = modes.begin(); it != modes.end();) {
+        if (!devices_in_topology.contains(it->first)) {
+          DD_LOG(info) << "Dropping cached display mode for device " << it->first << " because it is not part of the current topology.";
+          it = modes.erase(it);
+        } else {
+          ++it;
+        }
+      }
+
+      return modes;
+    };
+
     const auto &cached_state {m_persistence_state->getState()};
-    const auto cached_display_modes {cached_state ? cached_state->m_modified.m_original_modes : DeviceDisplayModeMap {}};
+    const auto cached_display_modes {prune_modes_to_topology(cached_state ? cached_state->m_modified.m_original_modes : DeviceDisplayModeMap {})};
     const bool change_required {config.m_resolution || config.m_refresh_rate};
     const bool might_need_to_restore {!cached_display_modes.empty()};
 
     DeviceDisplayModeMap current_display_modes;
     if (change_required || might_need_to_restore) {
-      current_display_modes = m_dd_api->getCurrentDisplayModes(win_utils::flattenTopology(new_state.m_modified.m_topology));
+      current_display_modes = m_dd_api->getCurrentDisplayModes(devices_in_topology);
       if (current_display_modes.empty()) {
         DD_LOG(error) << "Failed to get current display modes!";
         return false;
@@ -294,7 +312,7 @@ namespace display_device {
         // It is possible that the display modes will not actually change even though the "current != new" condition is true.
         // This is because of some additional internal checks that determine whether the change is actually needed.
         // Therefore we should check the current display modes after the fact!
-        if (current_display_modes != m_dd_api->getCurrentDisplayModes(win_utils::flattenTopology(new_state.m_modified.m_topology))) {
+        if (current_display_modes != m_dd_api->getCurrentDisplayModes(devices_in_topology)) {
           system_settings_touched = true;
           guard_fn = win_utils::modeGuardFn(*m_dd_api, current_display_modes);
         }
