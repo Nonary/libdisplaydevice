@@ -222,8 +222,19 @@ namespace display_device::win_utils {
     auto initial_primary_devices {stripDevices(initial_state.m_primary_devices, devices)};
 
     if (stripped_initial_topology.empty()) {
-      DD_LOG(error) << "Enumerated device list does not contain ANY of the devices from the initial state!";
-      return std::nullopt;
+      DD_LOG(warning) << "Enumerated device list does not contain any devices from the initial state! Returning empty topology for manual configuration.";
+      auto current_primary_devices {getDeviceIds(devices, primaryOnlyDevices)};
+      if (current_primary_devices.empty()) {
+        current_primary_devices = getDeviceIds(devices, anyDevice);
+      }
+      if (current_primary_devices.empty()) {
+        DD_LOG(error) << "No devices available at all!";
+        return std::nullopt;
+      }
+      return SingleDisplayConfigState::Initial {
+        ActiveTopology {},
+        current_primary_devices
+      };
     }
 
     if (initial_primary_devices.empty()) {

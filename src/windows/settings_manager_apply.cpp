@@ -169,13 +169,6 @@ namespace display_device {
     }
 
     if (change_is_needed) {
-      if (cached_state && !m_dd_api->isTopologyTheSame(cached_state->m_modified.m_topology, new_topology)) {
-        DD_LOG(warning) << "To apply new display device settings, previous modifications must be undone! Trying to undo them now.";
-        if (revertModifiedSettings(topology_before_changes, system_settings_touched) != RevertResult::Ok) {
-          DD_LOG(error) << "Failed to apply new configuration, because the previous settings could not be reverted!";
-          return std::nullopt;
-        }
-      }
 
       const bool audio_is_captured {m_audio_context_api->isCaptured()};
       if (!audio_is_captured) {
