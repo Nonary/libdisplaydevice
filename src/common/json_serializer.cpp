@@ -20,6 +20,6 @@ namespace display_device {
   DD_JSON_DEFINE_SERIALIZE_STRUCT(Point, x, y)
   DD_JSON_DEFINE_SERIALIZE_STRUCT(EdidData, manufacturer_id, product_code, serial_number)
   DD_JSON_DEFINE_SERIALIZE_STRUCT(EnumeratedDevice::Info, resolution, resolution_scale, refresh_rate, primary, origin_point, hdr_state)
-  DD_JSON_DEFINE_SERIALIZE_STRUCT(EnumeratedDevice, device_id, display_name, friendly_name, edid, info)
+  DD_JSON_DEFINE_SERIALIZE_STRUCT(EnumeratedDevice, device_id, display_name, friendly_name, edid, info, supported_refresh_rates)
   DD_JSON_DEFINE_SERIALIZE_STRUCT(SingleDisplayConfiguration, device_id, device_prep, resolution, refresh_rate, hdr_state)
 }  // namespace display_device

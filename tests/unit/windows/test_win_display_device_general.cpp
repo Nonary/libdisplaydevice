@@ -142,6 +142,14 @@ TEST_F_S_MOCKED(EnumAvailableDevices) {
     .WillOnce(Return(std::nullopt))
     .RetiresOnSaturation();
 
+  EXPECT_CALL(*m_layer, getSupportedDisplayModes(_))
+    .Times(2)
+    .WillRepeatedly(Return(std::vector<display_device::DisplayMode> {
+      {{1920, 1080}, {60, 1}},
+      {{1920, 1080}, {120, 1}}
+    }))
+    .RetiresOnSaturation();
+
   EXPECT_CALL(*m_layer, getFriendlyName(_))
     .Times(1)
     .WillOnce(Return("FriendlyName2"))
@@ -161,6 +169,14 @@ TEST_F_S_MOCKED(EnumAvailableDevices) {
   EXPECT_CALL(*m_layer, getHdrState(_))
     .Times(1)
     .WillOnce(Return(display_device::HdrState::Enabled))
+    .RetiresOnSaturation();
+
+  EXPECT_CALL(*m_layer, getSupportedDisplayModes(_))
+    .Times(3)
+    .WillRepeatedly(Return(std::vector<display_device::DisplayMode> {
+      {{1920, 1080}, {60, 1}},
+      {{1920, 1080}, {120, 1}}
+    }))
     .RetiresOnSaturation();
 
   EXPECT_CALL(*m_layer, getFriendlyName(_))
@@ -184,7 +200,8 @@ TEST_F_S_MOCKED(EnumAvailableDevices) {
        true,
        {0, 0},
        std::nullopt
-     }},
+     },
+     {display_device::Rational {60, 1}, display_device::Rational {120, 1}}},
     {"DeviceId2",
      "DisplayName2",
      "FriendlyName2",
@@ -196,12 +213,14 @@ TEST_F_S_MOCKED(EnumAvailableDevices) {
        false,
        {1921, 0},
        display_device::HdrState::Enabled
-     }},
+     },
+     {display_device::Rational {60, 1}, display_device::Rational {120, 1}}},
     {"DeviceId3",
      "",
      "FriendlyName3",
      std::nullopt,
-     std::nullopt}
+     std::nullopt,
+     {display_device::Rational {60, 1}, display_device::Rational {120, 1}}}
   };
   EXPECT_EQ(m_win_dd.enumAvailableDevices(), expected_list);
 }
@@ -278,12 +297,14 @@ TEST_F_S_MOCKED(EnumAvailableDevices, MissingSourceModes) {
        true,
        {0, 0},
        std::nullopt
-     }},
+     },
+     {display_device::Rational {60, 1}, display_device::Rational {120, 1}}},
     {"DeviceId2",
      "DisplayName2",
      "FriendlyName2",
      ut_consts::DEFAULT_EDID_DATA,
-     std::nullopt}
+     std::nullopt,
+     {display_device::Rational {60, 1}, display_device::Rational {120, 1}}}
   };
   EXPECT_EQ(m_win_dd.enumAvailableDevices(), expected_list);
 }

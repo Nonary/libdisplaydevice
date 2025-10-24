@@ -47,9 +47,12 @@ TEST_F_S(EnumeratedDevice) {
     }
   };
 
-  executeTestCase(display_device::EnumeratedDevice {}, R"({"device_id":"","display_name":"","edid":null,"friendly_name":"","info":null})");
-  executeTestCase(item_1, R"({"device_id":"ID_1","display_name":"NAME_2","edid":null,"friendly_name":"FU_NAME_3","info":{"hdr_state":"Enabled","origin_point":{"x":1,"y":2},"primary":false,"refresh_rate":{"type":"double","value":119.9554},"resolution":{"height":1080,"width":1920},"resolution_scale":{"type":"rational","value":{"denominator":100,"numerator":175}}}})");
-  executeTestCase(item_2, R"({"device_id":"ID_2","display_name":"NAME_2","edid":{"manufacturer_id":"","product_code":"","serial_number":0},"friendly_name":"FU_NAME_2","info":{"hdr_state":"Disabled","origin_point":{"x":0,"y":0},"primary":true,"refresh_rate":{"type":"rational","value":{"denominator":10000,"numerator":1199554}},"resolution":{"height":1080,"width":1920},"resolution_scale":{"type":"double","value":1.75}}})");
+  item_1.m_supported_refresh_rates = {display_device::Rational {60, 1}};
+  item_2.m_supported_refresh_rates = {display_device::Rational {1199554, 10000}};
+
+  executeTestCase(display_device::EnumeratedDevice {}, R"({"device_id":"","display_name":"","edid":null,"friendly_name":"","info":null,"supported_refresh_rates":[]})");
+  executeTestCase(item_1, R"({"device_id":"ID_1","display_name":"NAME_2","edid":null,"friendly_name":"FU_NAME_3","info":{"hdr_state":"Enabled","origin_point":{"x":1,"y":2},"primary":false,"refresh_rate":{"type":"double","value":119.9554},"resolution":{"height":1080,"width":1920},"resolution_scale":{"type":"rational","value":{"denominator":100,"numerator":175}}},"supported_refresh_rates":[{"numerator":60,"denominator":1}]})");
+  executeTestCase(item_2, R"({"device_id":"ID_2","display_name":"NAME_2","edid":{"manufacturer_id":"","product_code":"","serial_number":0},"friendly_name":"FU_NAME_2","info":{"hdr_state":"Disabled","origin_point":{"x":0,"y":0},"primary":true,"refresh_rate":{"type":"rational","value":{"denominator":10000,"numerator":1199554}},"resolution":{"height":1080,"width":1920},"resolution_scale":{"type":"double","value":1.75}},"supported_refresh_rates":[{"numerator":1199554,"denominator":10000}]})");
 }
 
 TEST_F_S(EnumeratedDeviceList) {
@@ -83,10 +86,13 @@ TEST_F_S(EnumeratedDeviceList) {
   };
   display_device::EnumeratedDevice item_3 {};
 
+  item_1.m_supported_refresh_rates = {display_device::Rational {60, 1}, display_device::Rational {144, 1}};
+  item_2.m_supported_refresh_rates = {display_device::Rational {1199554, 10000}};
+
   executeTestCase(display_device::EnumeratedDeviceList {}, R"([])");
-  executeTestCase(display_device::EnumeratedDeviceList {item_1, item_2, item_3}, R"([{"device_id":"ID_1","display_name":"NAME_2","edid":null,"friendly_name":"FU_NAME_3","info":{"hdr_state":"Enabled","origin_point":{"x":1,"y":2},"primary":false,"refresh_rate":{"type":"double","value":119.9554},"resolution":{"height":1080,"width":1920},"resolution_scale":{"type":"rational","value":{"denominator":100,"numerator":175}}}},)"
-                                                                                 R"({"device_id":"ID_2","display_name":"NAME_2","edid":{"manufacturer_id":"","product_code":"","serial_number":0},"friendly_name":"FU_NAME_2","info":{"hdr_state":"Disabled","origin_point":{"x":0,"y":0},"primary":true,"refresh_rate":{"type":"rational","value":{"denominator":10000,"numerator":1199554}},"resolution":{"height":1080,"width":1920},"resolution_scale":{"type":"double","value":1.75}}},)"
-                                                                                 R"({"device_id":"","display_name":"","edid":null,"friendly_name":"","info":null}])");
+  executeTestCase(display_device::EnumeratedDeviceList {item_1, item_2, item_3}, R"([{"device_id":"ID_1","display_name":"NAME_2","edid":null,"friendly_name":"FU_NAME_3","info":{"hdr_state":"Enabled","origin_point":{"x":1,"y":2},"primary":false,"refresh_rate":{"type":"double","value":119.9554},"resolution":{"height":1080,"width":1920},"resolution_scale":{"type":"rational","value":{"denominator":100,"numerator":175}}},"supported_refresh_rates":[{"numerator":60,"denominator":1},{"numerator":144,"denominator":1}]},)"
+                                                                                 R"({"device_id":"ID_2","display_name":"NAME_2","edid":{"manufacturer_id":"","product_code":"","serial_number":0},"friendly_name":"FU_NAME_2","info":{"hdr_state":"Disabled","origin_point":{"x":0,"y":0},"primary":true,"refresh_rate":{"type":"rational","value":{"denominator":10000,"numerator":1199554}},"resolution":{"height":1080,"width":1920},"resolution_scale":{"type":"double","value":1.75}},"supported_refresh_rates":[{"numerator":1199554,"denominator":10000}]},)"
+                                                                                 R"({"device_id":"","display_name":"","edid":null,"friendly_name":"","info":null,"supported_refresh_rates":[]}])");
 }
 
 TEST_F_S(SingleDisplayConfiguration) {
