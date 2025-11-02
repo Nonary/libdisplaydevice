@@ -4,6 +4,7 @@
  */
 // class header include
 #include "display_device/windows/win_api_layer.h"
+#include "display_device/windows/win_api_recovery.h"
 
 // system includes
 #include <boost/algorithm/string.hpp>
@@ -24,7 +25,30 @@
 // Windows includes after "windows.h"
 #include <SetupApi.h>
 
+namespace {
+  thread_local display_device::DisplayRecoveryBehavior g_display_recovery_behavior = display_device::DisplayRecoveryBehavior::Automatic;
+}
+
 namespace display_device {
+  namespace detail {
+    DisplayRecoveryBehavior current_display_recovery_behavior() {
+      return g_display_recovery_behavior;
+    }
+
+    void set_display_recovery_behavior(DisplayRecoveryBehavior behavior) {
+      g_display_recovery_behavior = behavior;
+    }
+  }  // namespace detail
+
+  DisplayRecoveryBehaviorGuard::DisplayRecoveryBehaviorGuard(DisplayRecoveryBehavior behavior):
+      m_previous(detail::current_display_recovery_behavior()) {
+    detail::set_display_recovery_behavior(behavior);
+  }
+
+  DisplayRecoveryBehaviorGuard::~DisplayRecoveryBehaviorGuard() {
+    detail::set_display_recovery_behavior(m_previous);
+  }
+
   namespace {
     // Forward declaration to allow use before definition within this TU
     std::string toUtf8(const WinApiLayerInterface &w_api, const std::wstring &value);
@@ -452,7 +476,12 @@ namespace display_device {
 
     static std::size_t last_sig = 0;
 
-    auto attempt_stack_recovery = [&](const char *context) {
+    auto attempt_stack_recovery = [&](const char *context) -> bool {
+      if (detail::current_display_recovery_behavior() == DisplayRecoveryBehavior::Skip) {
+        DD_LOG(debug) << context << "; skipping display stack recovery (behavior=skip).";
+        return false;
+      }
+
       DD_LOG(info) << context << "; attempting display stack recovery.";
 
       auto log_result = [&](LONG result, const char *label) {
@@ -487,6 +516,7 @@ namespace display_device {
       } else {
         DD_LOG(info) << "ChangeDisplaySettingsExA with CDS_RESET succeeded.";
       }
+      return true;
     };
 
     for (int attempt = 0; attempt < 2; ++attempt) {
@@ -505,8 +535,9 @@ namespace display_device {
           continue;  // try compat
         }
         if ((result == ERROR_NOT_SUPPORTED || result == ERROR_GEN_FAILURE || result == ERROR_INVALID_PARAMETER) && recovery_budget-- > 0) {
-          attempt_stack_recovery("GetDisplayConfigBufferSizes failure");
-          goto retry_get_sizes;
+          if (attempt_stack_recovery("GetDisplayConfigBufferSizes failure")) {
+            goto retry_get_sizes;
+          }
         }
         DD_LOG(error) << getErrorString(result) << " failed 'to get display buffer size's!";
         continue;
@@ -553,8 +584,9 @@ namespace display_device {
             result = GetDisplayConfigBufferSizes(flags, &path_count, &mode_count);
             if (result != ERROR_SUCCESS) {
               if ((result == ERROR_NOT_SUPPORTED || result == ERROR_GEN_FAILURE || result == ERROR_INVALID_PARAMETER) && recovery_budget-- > 0) {
-                attempt_stack_recovery("GetDisplayConfigBufferSizes retry failure");
-                goto retry_get_sizes;
+                if (attempt_stack_recovery("GetDisplayConfigBufferSizes retry failure")) {
+                  goto retry_get_sizes;
+                }
               }
               break;
             }
@@ -573,8 +605,9 @@ namespace display_device {
         }
 
         if ((result == ERROR_NOT_SUPPORTED || result == ERROR_GEN_FAILURE || result == ERROR_INVALID_PARAMETER) && recovery_budget-- > 0) {
-          attempt_stack_recovery("QueryDisplayConfig failure");
-          goto retry_get_sizes;
+          if (attempt_stack_recovery("QueryDisplayConfig failure")) {
+            goto retry_get_sizes;
+          }
         }
 
         if (use_virtual && (result == ERROR_NOT_SUPPORTED || result == ERROR_INVALID_PARAMETER)) {
