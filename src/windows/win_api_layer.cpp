@@ -476,6 +476,40 @@ namespace display_device {
 
     static std::size_t last_sig = 0;
 
+    bool headless_detected = false;
+
+    auto should_skip_recovery_for_headless = [&](const char *context, LONG error_code) -> bool {
+      if (headless_detected) {
+        return true;
+      }
+
+      if (GetSystemMetrics(SM_CMONITORS) > 0) {
+        return false;
+      }
+
+      bool any_active_output = false;
+      for (DWORD index = 0;; ++index) {
+        DISPLAY_DEVICEW device = {};
+        device.cb = sizeof(device);
+        if (!EnumDisplayDevicesW(nullptr, index, &device, 0)) {
+          break;
+        }
+        if ((device.StateFlags & DISPLAY_DEVICE_ACTIVE) != 0) {
+          any_active_output = true;
+          break;
+        }
+      }
+
+      if (any_active_output) {
+        return false;
+      }
+
+      headless_detected = true;
+      DD_LOG(info) << context << " (" << getErrorString(error_code)
+                   << "); zero active monitors detected, skipping display stack recovery until one becomes available.";
+      return true;
+    };
+
     auto attempt_stack_recovery = [&](const char *context) -> bool {
       if (detail::current_display_recovery_behavior() == DisplayRecoveryBehavior::Skip) {
         DD_LOG(debug) << context << "; skipping display stack recovery (behavior=skip).";
@@ -535,6 +569,9 @@ namespace display_device {
           continue;  // try compat
         }
         if ((result == ERROR_NOT_SUPPORTED || result == ERROR_GEN_FAILURE || result == ERROR_INVALID_PARAMETER) && recovery_budget-- > 0) {
+          if (should_skip_recovery_for_headless("GetDisplayConfigBufferSizes failure", result)) {
+            return std::nullopt;
+          }
           if (attempt_stack_recovery("GetDisplayConfigBufferSizes failure")) {
             goto retry_get_sizes;
           }
@@ -584,6 +621,9 @@ namespace display_device {
             result = GetDisplayConfigBufferSizes(flags, &path_count, &mode_count);
             if (result != ERROR_SUCCESS) {
               if ((result == ERROR_NOT_SUPPORTED || result == ERROR_GEN_FAILURE || result == ERROR_INVALID_PARAMETER) && recovery_budget-- > 0) {
+                if (should_skip_recovery_for_headless("GetDisplayConfigBufferSizes retry failure", result)) {
+                  return std::nullopt;
+                }
                 if (attempt_stack_recovery("GetDisplayConfigBufferSizes retry failure")) {
                   goto retry_get_sizes;
                 }
@@ -605,6 +645,9 @@ namespace display_device {
         }
 
         if ((result == ERROR_NOT_SUPPORTED || result == ERROR_GEN_FAILURE || result == ERROR_INVALID_PARAMETER) && recovery_budget-- > 0) {
+          if (should_skip_recovery_for_headless("QueryDisplayConfig failure", result)) {
+            return std::nullopt;
+          }
           if (attempt_stack_recovery("QueryDisplayConfig failure")) {
             goto retry_get_sizes;
           }
