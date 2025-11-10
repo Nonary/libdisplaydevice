@@ -173,6 +173,11 @@ namespace display_device {
     [[nodiscard]] virtual bool restoreMonitorSettings() = 0;
 
     /**
+     * @brief Move the requested display by changing its origin point.
+     */
+    [[nodiscard]] virtual bool setDisplayOrigin(const std::string &device_id, const Point &origin) = 0;
+
+    /**
      * @brief Check whether the specified device is primary.
      * @param device_id A device to perform the check for.
      * @returns True if the device is primary, false otherwise.

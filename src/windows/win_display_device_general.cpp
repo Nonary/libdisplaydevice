@@ -172,4 +172,46 @@ namespace display_device {
     }
     return true;
   }
+
+  bool WinDisplayDevice::setDisplayOrigin(const std::string &device_id, const display_device::Point &origin) {
+    if (device_id.empty()) {
+      DD_LOG(error) << "Display id is empty; cannot move display.";
+      return false;
+    }
+
+    auto display_data {m_w_api->queryDisplayConfig(QueryType::Active)};
+    if (!display_data) {
+      return false;
+    }
+
+    auto *path = win_utils::getActivePath(*m_w_api, device_id, display_data->m_paths);
+    if (!path) {
+      DD_LOG(error) << "Failed to find path for device " << device_id << "!";
+      return false;
+    }
+
+    const auto source_index = win_utils::getSourceIndex(*path, display_data->m_modes);
+    if (!source_index) {
+      DD_LOG(error) << "Device " << device_id << " is missing a source mode!";
+      return false;
+    }
+
+    auto *source_mode = win_utils::getSourceMode(source_index, display_data->m_modes);
+    if (!source_mode) {
+      DD_LOG(error) << "Source mode lookup failed for device " << device_id << "!";
+      return false;
+    }
+
+    source_mode->position.x = static_cast<LONG>(origin.m_x);
+    source_mode->position.y = static_cast<LONG>(origin.m_y);
+
+    const UINT32 flags {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES | SDC_VIRTUAL_MODE_AWARE};
+    const LONG result {m_w_api->setDisplayConfig(display_data->m_paths, display_data->m_modes, flags)};
+    if (result != ERROR_SUCCESS) {
+      DD_LOG(error) << m_w_api->getErrorString(result) << " failed to move device " << device_id << " to new origin!";
+      return false;
+    }
+
+    return true;
+  }
 }  // namespace display_device

@@ -71,6 +71,9 @@ namespace display_device {
     /** For details @see WinDisplayDeviceInterface::restoreMonitorSettings */
     [[nodiscard]] bool restoreMonitorSettings() override;
 
+    /** For details @see WinDisplayDeviceInterface::setDisplayOrigin */
+    [[nodiscard]] bool setDisplayOrigin(const std::string &device_id, const Point &origin) override;
+
   private:
     std::shared_ptr<WinApiLayerInterface> m_w_api;
   };
