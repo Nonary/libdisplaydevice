@@ -64,6 +64,9 @@ namespace display_device {
             continue;
           }
           const auto &path_for_modes {display_data->m_paths.at(path_index)};
+          if (!win_utils::isActive(path_for_modes) && !win_utils::isAvailable(path_for_modes)) {
+            continue;
+          }
           for (const auto &mode : m_w_api->getSupportedDisplayModes(path_for_modes)) {
             const auto &refresh {mode.m_refresh_rate};
             if (refresh.m_denominator == 0) {

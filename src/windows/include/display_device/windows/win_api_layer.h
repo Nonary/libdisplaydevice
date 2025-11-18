@@ -4,6 +4,10 @@
  */
 #pragma once
 
+// standard includes
+#include <mutex>
+#include <unordered_map>
+
 // local includes
 #include "win_api_layer_interface.h"
 
@@ -52,5 +56,16 @@ namespace display_device {
     /** For details @see WinApiLayerInterface::getSupportedDisplayModes */
     [[nodiscard]] std::vector<DisplayMode> getSupportedDisplayModes(const DISPLAYCONFIG_PATH_INFO &path) const override;
 
+  private:
+    struct DisplayModeCacheEntry {
+      std::vector<DisplayMode> m_modes;
+    };
+
+    void invalidateDisplayModeCache() const;
+    bool tryGetCachedDisplayModes(const std::string &display_name, std::vector<DisplayMode> &modes) const;
+    void storeDisplayModesInCache(const std::string &display_name, const std::vector<DisplayMode> &modes) const;
+
+    mutable std::unordered_map<std::string, DisplayModeCacheEntry> m_display_mode_cache;
+    mutable std::mutex m_display_mode_cache_mutex;
   };
 }  // namespace display_device

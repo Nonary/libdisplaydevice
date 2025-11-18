@@ -25,7 +25,11 @@ include(Boost_DD)
 include(Json_DD)
 
 # Link the additional libraries
-target_link_libraries(${MODULE} PRIVATE
+target_link_libraries(${MODULE}
+        PUBLIC
+        cfgmgr32
+        dxgi
+        PRIVATE
         Boost::algorithm
         Boost::scope
         Boost::uuid

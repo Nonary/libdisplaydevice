@@ -13,10 +13,12 @@
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_io.hpp>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <functional>
 #include <iomanip>
+#include <sstream>
 #include <unordered_set>
 
 // local includes
@@ -24,6 +26,8 @@
 
 // Windows includes after "windows.h"
 #include <SetupApi.h>
+#include <dxgi1_2.h>
+#include <wrl/client.h>
 
 namespace {
   thread_local display_device::DisplayRecoveryBehavior g_display_recovery_behavior = display_device::DisplayRecoveryBehavior::Automatic;
@@ -50,6 +54,51 @@ namespace display_device {
   }
 
   namespace {
+    std::string queryTypeToString(QueryType type) {
+      switch (type) {
+        case QueryType::Active:
+          return "Active";
+        case QueryType::All:
+          return "All";
+      }
+
+      return "Unknown";
+    }
+
+    std::string hdrStateToString(HdrState state) {
+      switch (state) {
+        case HdrState::Disabled:
+          return "Disabled";
+        case HdrState::Enabled:
+          return "Enabled";
+      }
+
+      return "Unknown";
+    }
+
+    std::string pathIdentifier(const DISPLAYCONFIG_PATH_INFO &path) {
+      std::ostringstream identifier;
+      identifier << "adapter=[" << path.sourceInfo.adapterId.HighPart << ":" << path.sourceInfo.adapterId.LowPart << "]";
+      identifier << " source=" << path.sourceInfo.id << " target=" << path.targetInfo.id;
+      return identifier.str();
+    }
+
+    class ApiCallTimer {
+    public:
+      ApiCallTimer(const char *name, std::string detail = {})
+          : m_name(name), m_detail(std::move(detail)), m_start(std::chrono::steady_clock::now()) {}
+
+      ~ApiCallTimer() {
+        const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_start);
+        DD_LOG(info) << m_name << (m_detail.empty() ? "" : " (" + m_detail + ")") << " completed in " << elapsed.count() << " ms";
+      }
+
+    private:
+      const char *m_name;
+      std::string m_detail;
+      std::chrono::steady_clock::time_point m_start;
+    };
+
     // Forward declaration to allow use before definition within this TU
     std::string toUtf8(const WinApiLayerInterface &w_api, const std::wstring &value);
 
@@ -416,6 +465,9 @@ namespace display_device {
   }  // namespace
 
   std::string WinApiLayer::getErrorString(LONG error_code) const {
+    std::ostringstream detail;
+    detail << "error=" << error_code;
+    ApiCallTimer timer("WinApiLayer::getErrorString", detail.str());
     std::ostringstream error;
     error << "[code: ";
     switch (error_code) {
@@ -446,6 +498,7 @@ namespace display_device {
   }
 
   std::optional<PathAndModeData> WinApiLayer::queryDisplayConfig(QueryType type) const {
+    ApiCallTimer timer("WinApiLayer::queryDisplayConfig", queryTypeToString(type));
     auto make_flags = [&](bool virtual_mode_aware) -> UINT32 {
       UINT32 f = (type == QueryType::Active) ? QDC_ONLY_ACTIVE_PATHS : QDC_ALL_PATHS;
       if (virtual_mode_aware) {
@@ -677,6 +730,7 @@ namespace display_device {
   }
 
   std::string WinApiLayer::getDeviceId(const DISPLAYCONFIG_PATH_INFO &path) const {
+    ApiCallTimer timer("WinApiLayer::getDeviceId", pathIdentifier(path));
     const auto device_path {getMonitorDevicePathWstr(*this, path)};
     if (device_path.empty()) {
       // Error already logged
@@ -759,6 +813,7 @@ namespace display_device {
   }
 
   std::vector<std::byte> WinApiLayer::getEdid(const DISPLAYCONFIG_PATH_INFO &path) const {
+    ApiCallTimer timer("WinApiLayer::getEdid", pathIdentifier(path));
     const auto device_path {getMonitorDevicePathWstr(*this, path)};
     if (device_path.empty()) {
       // Error already logged
@@ -770,10 +825,12 @@ namespace display_device {
   }
 
   std::string WinApiLayer::getMonitorDevicePath(const DISPLAYCONFIG_PATH_INFO &path) const {
+    ApiCallTimer timer("WinApiLayer::getMonitorDevicePath", pathIdentifier(path));
     return toUtf8(*this, getMonitorDevicePathWstr(*this, path));
   }
 
   std::string WinApiLayer::getFriendlyName(const DISPLAYCONFIG_PATH_INFO &path) const {
+    ApiCallTimer timer("WinApiLayer::getFriendlyName", pathIdentifier(path));
     DISPLAYCONFIG_TARGET_DEVICE_NAME target_name = {};
     target_name.header.adapterId = path.targetInfo.adapterId;
     target_name.header.id = path.targetInfo.id;
@@ -790,6 +847,7 @@ namespace display_device {
   }
 
   std::string WinApiLayer::getDisplayName(const DISPLAYCONFIG_PATH_INFO &path) const {
+    ApiCallTimer timer("WinApiLayer::getDisplayName", pathIdentifier(path));
     DISPLAYCONFIG_SOURCE_DEVICE_NAME source_name = {};
     source_name.header.id = path.sourceInfo.id;
     source_name.header.adapterId = path.sourceInfo.adapterId;
@@ -806,6 +864,12 @@ namespace display_device {
   }
 
   LONG WinApiLayer::setDisplayConfig(std::vector<DISPLAYCONFIG_PATH_INFO> paths, std::vector<DISPLAYCONFIG_MODE_INFO> modes, UINT32 flags) {
+    std::ostringstream detail;
+    detail << "paths=" << paths.size() << " modes=" << modes.size() << " flags=0x" << std::hex << flags;
+    ApiCallTimer timer("WinApiLayer::setDisplayConfig", detail.str());
+    if ((flags & SDC_APPLY) != 0) {
+      invalidateDisplayModeCache();
+    }
     const auto callWithFlags = [&](const std::vector<DISPLAYCONFIG_PATH_INFO> &p, const std::vector<DISPLAYCONFIG_MODE_INFO> &m, UINT32 f, const char *reason) -> LONG {
       auto invoke = [&](UINT32 actual_flags) -> LONG {
         return ::SetDisplayConfig(
@@ -916,6 +980,7 @@ namespace display_device {
   }
 
   std::optional<HdrState> WinApiLayer::getHdrState(const DISPLAYCONFIG_PATH_INFO &path) const {
+    ApiCallTimer timer("WinApiLayer::getHdrState", pathIdentifier(path));
     if (is_W11_24H2_OrAbove(*this)) {
       DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 color_info = {};
       color_info.header.adapterId = path.targetInfo.adapterId;
@@ -948,6 +1013,9 @@ namespace display_device {
   }
 
   bool WinApiLayer::setHdrState(const DISPLAYCONFIG_PATH_INFO &path, HdrState state) {
+    std::ostringstream detail;
+    detail << pathIdentifier(path) << " state=" << hdrStateToString(state);
+    ApiCallTimer timer("WinApiLayer::setHdrState", detail.str());
     if (is_W11_24H2_OrAbove(*this)) {
       DISPLAYCONFIG_SET_HDR_STATE hdr_state = {};
       hdr_state.header.adapterId = path.targetInfo.adapterId;
@@ -982,6 +1050,7 @@ namespace display_device {
   }
 
   std::optional<Resolution> WinApiLayer::getPreferredResolution(const DISPLAYCONFIG_PATH_INFO &path) const {
+    ApiCallTimer timer("WinApiLayer::getPreferredResolution", pathIdentifier(path));
     DISPLAYCONFIG_TARGET_PREFERRED_MODE preferred = {};
     preferred.header.adapterId = path.targetInfo.adapterId;
     preferred.header.id = path.targetInfo.id;
@@ -1004,63 +1073,249 @@ namespace display_device {
   }
 
   std::vector<DisplayMode> WinApiLayer::getSupportedDisplayModes(const DISPLAYCONFIG_PATH_INFO &path) const {
-    std::vector<DisplayMode> supported;
-
+    ApiCallTimer timer("WinApiLayer::getSupportedDisplayModes", pathIdentifier(path));
     const std::string display_name = getDisplayName(path);
     if (display_name.empty()) {
       // Inactive target may not have a display name; return empty list.
       DD_LOG(debug) << "Display name is empty; cannot enumerate modes for inactive target.";
-      return supported;
+      return {};
     }
 
-    // Enumerate all available graphics modes for this display device.
-    // Use the ANSI variant explicitly as getDisplayName returns UTF-8.
-    DEVMODEA dm {};
-    dm.dmSize = sizeof(dm);
+    std::vector<DisplayMode> cached_modes;
+    if (tryGetCachedDisplayModes(display_name, cached_modes)) {
+      DD_LOG(debug) << "Returning cached display modes for " << display_name << ".";
+      return cached_modes;
+    }
 
-    // Keep a simple set to avoid duplicates.
-    struct Key {
-      unsigned int w, h, f;
+    struct DisplayModeKey {
+      unsigned int m_width;
+      unsigned int m_height;
+      unsigned int m_refresh_num;
+      unsigned int m_refresh_den;
 
-      bool operator==(const Key &o) const {
-        return w == o.w && h == o.h && f == o.f;
+      bool operator==(const DisplayModeKey &o) const {
+        return m_width == o.m_width && m_height == o.m_height && m_refresh_num == o.m_refresh_num && m_refresh_den == o.m_refresh_den;
       }
     };
 
-    struct KeyHash {
-      std::size_t operator()(const Key &k) const noexcept {
-        return (static_cast<std::size_t>(k.w) << 32) ^ (static_cast<std::size_t>(k.h) << 16) ^ static_cast<std::size_t>(k.f);
+    struct DisplayModeKeyHash {
+      std::size_t operator()(const DisplayModeKey &k) const noexcept {
+        std::size_t hash = static_cast<std::size_t>(k.m_width);
+        hash = (hash << 16) ^ static_cast<std::size_t>(k.m_height);
+        hash = (hash << 16) ^ static_cast<std::size_t>(k.m_refresh_num);
+        hash = (hash << 16) ^ static_cast<std::size_t>(k.m_refresh_den);
+        return hash;
       }
     };
 
-    std::unordered_set<Key, KeyHash> seen;
+    const auto enumerate_via_dxgi = [&]() -> std::vector<DisplayMode> {
+      std::vector<DisplayMode> result;
+      std::unordered_set<DisplayModeKey, DisplayModeKeyHash> seen;
+      const auto add_mode = [&](unsigned int width, unsigned int height, unsigned int numerator, unsigned int denominator) {
+        if (width == 0 || height == 0) {
+          return;
+        }
 
-    for (DWORD i = 0; EnumDisplaySettingsExA(display_name.c_str(), i, &dm, 0) == TRUE; ++i) {
-      if (!(dm.dmFields & (DM_PELSWIDTH | DM_PELSHEIGHT))) {
-        continue;
+        const unsigned int sanitized_denominator = denominator == 0 ? 1U : denominator;
+        DisplayModeKey key {width, height, numerator, sanitized_denominator};
+        if (seen.insert(key).second) {
+          result.push_back(DisplayMode {Resolution {width, height}, Rational {numerator, sanitized_denominator}});
+        }
+      };
+
+      DISPLAYCONFIG_TARGET_DEVICE_NAME target_name = {};
+      target_name.header.adapterId = path.targetInfo.adapterId;
+      target_name.header.id = path.targetInfo.id;
+      target_name.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
+      target_name.header.size = sizeof(target_name);
+
+      std::optional<UINT32> connector_instance;
+      const LONG target_result {DisplayConfigGetDeviceInfo(&target_name.header)};
+      if (target_result == ERROR_SUCCESS) {
+        connector_instance = target_name.connectorInstance;
+      } else {
+        DD_LOG(debug) << getErrorString(target_result) << " failed to get target device info while enumerating display modes for " << display_name << '.';
       }
 
-      unsigned int w = static_cast<unsigned int>(dm.dmPelsWidth);
-      unsigned int h = static_cast<unsigned int>(dm.dmPelsHeight);
-      unsigned int f = 0;
-      if (dm.dmFields & DM_DISPLAYFREQUENCY) {
-        f = static_cast<unsigned int>(dm.dmDisplayFrequency);
+      Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
+      HRESULT hr = CreateDXGIFactory1(IID_PPV_ARGS(&factory));
+      if (FAILED(hr)) {
+        DD_LOG(debug) << "CreateDXGIFactory1 failed with HRESULT=0x" << std::hex << hr << " while enumerating display modes for " << display_name << ".";
+        return {};
       }
 
-      if (w == 0 || h == 0) {
-        continue;
+      const LUID adapter_luid = path.targetInfo.adapterId;
+      bool matched_output = false;
+
+      const auto query_output_modes = [&](Microsoft::WRL::ComPtr<IDXGIOutput> &output) -> bool {
+        if (!output) {
+          return false;
+        }
+
+        matched_output = true;
+        constexpr UINT flags = DXGI_ENUM_MODES_INTERLACED | DXGI_ENUM_MODES_SCALING;
+        constexpr DXGI_FORMAT formats[] = {DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM};
+
+        for (DXGI_FORMAT format : formats) {
+          UINT mode_count = 0;
+          hr = output->GetDisplayModeList(format, flags, &mode_count, nullptr);
+          if (FAILED(hr)) {
+            DD_LOG(debug) << "GetDisplayModeList (count) failed for format " << static_cast<int>(format) << " with HRESULT=0x" << std::hex << hr << '.';
+            continue;
+          }
+
+          if (mode_count == 0) {
+            continue;
+          }
+
+          std::vector<DXGI_MODE_DESC> modes(mode_count);
+          hr = output->GetDisplayModeList(format, flags, &mode_count, modes.data());
+          if (FAILED(hr)) {
+            DD_LOG(debug) << "GetDisplayModeList failed for format " << static_cast<int>(format) << " with HRESULT=0x" << std::hex << hr << '.';
+            continue;
+          }
+
+          modes.resize(mode_count);
+          for (const auto &mode : modes) {
+            add_mode(mode.Width, mode.Height, mode.RefreshRate.Numerator, mode.RefreshRate.Denominator);
+          }
+
+          if (!result.empty()) {
+            return true;
+          }
+        }
+
+        return false;
+      };
+
+      for (UINT adapter_index = 0;; ++adapter_index) {
+        Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
+        hr = factory->EnumAdapters1(adapter_index, adapter.GetAddressOf());
+        if (hr == DXGI_ERROR_NOT_FOUND) {
+          break;
+        }
+
+        if (FAILED(hr)) {
+          DD_LOG(debug) << "EnumAdapters1 failed at index " << adapter_index << " with HRESULT=0x" << std::hex << hr << '.';
+          return {};
+        }
+
+        DXGI_ADAPTER_DESC1 adapter_desc;
+        if (FAILED(adapter->GetDesc1(&adapter_desc))) {
+          DD_LOG(debug) << "GetDesc1 failed for adapter index " << adapter_index << '.';
+          continue;
+        }
+
+        if (adapter_desc.AdapterLuid.HighPart != adapter_luid.HighPart || adapter_desc.AdapterLuid.LowPart != adapter_luid.LowPart) {
+          continue;
+        }
+
+        if (connector_instance) {
+          Microsoft::WRL::ComPtr<IDXGIOutput> output;
+          hr = adapter->EnumOutputs(*connector_instance, output.GetAddressOf());
+          if (hr == DXGI_ERROR_NOT_FOUND) {
+            DD_LOG(debug) << "EnumOutputs could not find connector " << *connector_instance << " while enumerating display modes for " << display_name << '.';
+          } else if (FAILED(hr)) {
+            DD_LOG(debug) << "EnumOutputs failed at connector " << *connector_instance << " with HRESULT=0x" << std::hex << hr << '.';
+            return {};
+          } else {
+            if (query_output_modes(output)) {
+              return result;
+            }
+          }
+        }
+
+        for (UINT output_index = 0;; ++output_index) {
+          Microsoft::WRL::ComPtr<IDXGIOutput> output;
+          hr = adapter->EnumOutputs(output_index, output.GetAddressOf());
+          if (hr == DXGI_ERROR_NOT_FOUND) {
+            break;
+          }
+
+          if (FAILED(hr)) {
+            DD_LOG(debug) << "EnumOutputs failed at index " << output_index << " with HRESULT=0x" << std::hex << hr << '.';
+            return {};
+          }
+
+          DXGI_OUTPUT_DESC output_desc;
+          if (FAILED(output->GetDesc(&output_desc))) {
+            DD_LOG(debug) << "GetDesc failed for output index " << output_index << '.';
+            continue;
+          }
+
+          const std::wstring dxgi_name_w {output_desc.DeviceName};
+          const auto dxgi_display_name = toUtf8(*this, dxgi_name_w);
+          if (!boost::iequals(dxgi_display_name, display_name)) {
+            continue;
+          }
+
+          if (query_output_modes(output)) {
+            return result;
+          }
+
+          DD_LOG(debug) << "DXGI returned no display modes for " << display_name << '.';
+          return {};
+        }
       }
 
-      Key key {w, h, f};
-      if (seen.insert(key).second) {
-        supported.push_back(DisplayMode {Resolution {w, h}, Rational {f, 1}});
+      if (!matched_output) {
+        DD_LOG(debug) << "DXGI could not match adapter/output for " << display_name << '.';
       }
+
+      return result;
+    };
+
+    const auto enumerate_via_gdi = [&]() -> std::vector<DisplayMode> {
+      std::vector<DisplayMode> result;
+      std::unordered_set<DisplayModeKey, DisplayModeKeyHash> seen;
+      const auto add_mode = [&](unsigned int width, unsigned int height, unsigned int frequency) {
+        if (width == 0 || height == 0) {
+          return;
+        }
+
+        DisplayModeKey key {width, height, frequency, 1};
+        if (seen.insert(key).second) {
+          result.push_back(DisplayMode {Resolution {width, height}, Rational {frequency, 1}});
+        }
+      };
+
+      for (DWORD i = 0;; ++i) {
+        DEVMODEA dm {};
+        dm.dmSize = sizeof(dm);
+        if (EnumDisplaySettingsExA(display_name.c_str(), i, &dm, 0) != TRUE) {
+          break;
+        }
+
+        if (!(dm.dmFields & (DM_PELSWIDTH | DM_PELSHEIGHT))) {
+          continue;
+        }
+
+        const unsigned int width = static_cast<unsigned int>(dm.dmPelsWidth);
+        const unsigned int height = static_cast<unsigned int>(dm.dmPelsHeight);
+        unsigned int frequency = 0;
+        if (dm.dmFields & DM_DISPLAYFREQUENCY) {
+          frequency = static_cast<unsigned int>(dm.dmDisplayFrequency);
+        }
+
+        add_mode(width, height, frequency);
+      }
+
+      return result;
+    };
+
+    std::vector<DisplayMode> supported = enumerate_via_dxgi();
+    if (supported.empty()) {
+      supported = enumerate_via_gdi();
     }
 
+    storeDisplayModesInCache(display_name, supported);
     return supported;
   }
 
   std::optional<Rational> WinApiLayer::getDisplayScale(const std::string &display_name, const DISPLAYCONFIG_SOURCE_MODE &source_mode) const {
+    std::ostringstream detail;
+    detail << "display=" << display_name << " width=" << source_mode.width << " height=" << source_mode.height;
+    ApiCallTimer timer("WinApiLayer::getDisplayScale", detail.str());
     // Note: implementation based on https://stackoverflow.com/a/74046173
     struct EnumData {
       std::string m_display_name;
@@ -1104,5 +1359,26 @@ namespace display_device {
 
     const auto width {static_cast<double>(*enum_data.m_width) / static_cast<double>(source_mode.width)};
     return Rational {static_cast<unsigned int>(std::round((static_cast<double>(GetDpiForSystem()) / 96. / width) * 100)), 100};
+  }
+
+  void WinApiLayer::invalidateDisplayModeCache() const {
+    std::lock_guard<std::mutex> lock(m_display_mode_cache_mutex);
+    m_display_mode_cache.clear();
+  }
+
+  bool WinApiLayer::tryGetCachedDisplayModes(const std::string &display_name, std::vector<DisplayMode> &modes) const {
+    std::lock_guard<std::mutex> lock(m_display_mode_cache_mutex);
+    const auto it = m_display_mode_cache.find(display_name);
+    if (it == m_display_mode_cache.end()) {
+      return false;
+    }
+
+    modes = it->second.m_modes;
+    return true;
+  }
+
+  void WinApiLayer::storeDisplayModesInCache(const std::string &display_name, const std::vector<DisplayMode> &modes) const {
+    std::lock_guard<std::mutex> lock(m_display_mode_cache_mutex);
+    m_display_mode_cache[display_name].m_modes = modes;
   }
 }  // namespace display_device
