@@ -125,6 +125,14 @@ namespace display_device {
   using EnumeratedDeviceList = std::vector<EnumeratedDevice>;
 
   /**
+   * @brief Controls how much data should be gathered when enumerating devices.
+   */
+  enum class DeviceEnumerationDetail {
+    Minimal, /**< Only gather the fields required for device identification. */
+    Full /**< Gather all metadata, including refresh lists and HDR/scale state. */
+  };
+
+  /**
    * @brief Configuration centered around a single display.
    *
    * Allows to easily configure the display without providing a complete configuration

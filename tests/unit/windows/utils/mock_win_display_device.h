@@ -10,7 +10,15 @@ namespace display_device {
   class MockWinDisplayDevice: public WinDisplayDeviceInterface {
   public:
     MOCK_METHOD(bool, isApiAccessAvailable, (), (const, override));
-    MOCK_METHOD(EnumeratedDeviceList, enumAvailableDevices, (), (const, override));
+    MOCK_METHOD(
+      EnumeratedDeviceList,
+      enumAvailableDevices,
+      (DeviceEnumerationDetail detail),
+      (const, override)
+    );
+    EnumeratedDeviceList enumAvailableDevices() const {
+      return enumAvailableDevices(DeviceEnumerationDetail::Full);
+    }
     MOCK_METHOD(std::string, getDisplayName, (const std::string &), (const, override));
     MOCK_METHOD(ActiveTopology, getCurrentTopology, (), (const, override));
     MOCK_METHOD(bool, isTopologyValid, (const ActiveTopology &), (const, override));

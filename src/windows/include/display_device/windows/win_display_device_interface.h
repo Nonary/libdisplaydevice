@@ -33,13 +33,16 @@ namespace display_device {
 
     /**
      * @brief Enumerate the available (active and inactive) devices.
+     * @param detail Controls how much metadata should be gathered per device.
      * @returns A list of available devices.
      *          Empty list can also be returned if an error has occurred.
      * @examples
      * const auto devices { enumAvailableDevices() };
      * @examples_end
      */
-    [[nodiscard]] virtual EnumeratedDeviceList enumAvailableDevices() const = 0;
+    [[nodiscard]] virtual EnumeratedDeviceList enumAvailableDevices(
+      DeviceEnumerationDetail detail = DeviceEnumerationDetail::Full
+    ) const = 0;
 
     /**
      * @brief Get display name associated with the device.

@@ -32,7 +32,7 @@ namespace display_device {
     return result == ERROR_SUCCESS;
   }
 
-  EnumeratedDeviceList WinDisplayDevice::enumAvailableDevices() const {
+  EnumeratedDeviceList WinDisplayDevice::enumAvailableDevices(DeviceEnumerationDetail detail) const {
     const auto display_data {m_w_api->queryDisplayConfig(QueryType::All)};
     if (!display_data) {
       // Error already logged
@@ -56,43 +56,45 @@ namespace display_device {
       const auto display_name {is_active ? m_w_api->getDisplayName(best_path) : std::string {}};  // Inactive devices can have multiple display names, so it's just meaningless use any
       const auto edid {EdidData::parse(m_w_api->getEdid(best_path))};
       std::vector<Rational> supported_refresh_rates;
-      std::set<std::pair<unsigned int, unsigned int>> seen_rates;
+      if (detail == DeviceEnumerationDetail::Full) {
+        std::set<std::pair<unsigned int, unsigned int>> seen_rates;
 
-      for (const auto &[_, path_index] : data.m_source_id_to_path_index) {
-        if (path_index >= display_data->m_paths.size()) {
-          continue;
-        }
-        const auto &path_for_modes {display_data->m_paths.at(path_index)};
-        for (const auto &mode : m_w_api->getSupportedDisplayModes(path_for_modes)) {
-          const auto &refresh {mode.m_refresh_rate};
-          if (refresh.m_denominator == 0) {
+        for (const auto &[_, path_index] : data.m_source_id_to_path_index) {
+          if (path_index >= display_data->m_paths.size()) {
             continue;
           }
-          const auto inserted {seen_rates.emplace(refresh.m_numerator, refresh.m_denominator).second};
-          if (inserted) {
-            supported_refresh_rates.push_back(refresh);
-          }
-        }
-      }
-
-      std::sort(
-        supported_refresh_rates.begin(),
-        supported_refresh_rates.end(),
-        [](const Rational &lhs, const Rational &rhs) {
-          if (lhs.m_denominator == 0 || rhs.m_denominator == 0) {
-            return lhs.m_numerator < rhs.m_numerator;
-          }
-          const long double lhs_value = static_cast<long double>(lhs.m_numerator) / static_cast<long double>(lhs.m_denominator);
-          const long double rhs_value = static_cast<long double>(rhs.m_numerator) / static_cast<long double>(rhs.m_denominator);
-          if (lhs_value == rhs_value) {
-            if (lhs.m_numerator == rhs.m_numerator) {
-              return lhs.m_denominator < rhs.m_denominator;
+          const auto &path_for_modes {display_data->m_paths.at(path_index)};
+          for (const auto &mode : m_w_api->getSupportedDisplayModes(path_for_modes)) {
+            const auto &refresh {mode.m_refresh_rate};
+            if (refresh.m_denominator == 0) {
+              continue;
             }
-            return lhs.m_numerator < rhs.m_numerator;
+            const auto inserted {seen_rates.emplace(refresh.m_numerator, refresh.m_denominator).second};
+            if (inserted) {
+              supported_refresh_rates.push_back(refresh);
+            }
           }
-          return lhs_value < rhs_value;
         }
-      );
+
+        std::sort(
+          supported_refresh_rates.begin(),
+          supported_refresh_rates.end(),
+          [](const Rational &lhs, const Rational &rhs) {
+            if (lhs.m_denominator == 0 || rhs.m_denominator == 0) {
+              return lhs.m_numerator < rhs.m_numerator;
+            }
+            const long double lhs_value = static_cast<long double>(lhs.m_numerator) / static_cast<long double>(lhs.m_denominator);
+            const long double rhs_value = static_cast<long double>(rhs.m_numerator) / static_cast<long double>(rhs.m_denominator);
+            if (lhs_value == rhs_value) {
+              if (lhs.m_numerator == rhs.m_numerator) {
+                return lhs.m_denominator < rhs.m_denominator;
+              }
+              return lhs.m_numerator < rhs.m_numerator;
+            }
+            return lhs_value < rhs_value;
+          }
+        );
+      }
 
       if (is_active && !source_mode) {
         DD_LOG(warning) << "Device " << device_id << " is missing source mode!";
@@ -100,13 +102,21 @@ namespace display_device {
 
       if (source_mode) {
         const Rational refresh_rate {best_path.targetInfo.refreshRate.Denominator > 0 ? Rational {best_path.targetInfo.refreshRate.Numerator, best_path.targetInfo.refreshRate.Denominator} : Rational {0, 1}};
+        FloatingPoint resolution_scale {Rational {1, 1}};
+        if (detail == DeviceEnumerationDetail::Full && is_active) {
+          resolution_scale = m_w_api->getDisplayScale(display_name, *source_mode).value_or(Rational {0, 1});
+        }
+        std::optional<HdrState> hdr_state;
+        if (detail == DeviceEnumerationDetail::Full) {
+          hdr_state = m_w_api->getHdrState(best_path);
+        }
         const EnumeratedDevice::Info info {
           {source_mode->width, source_mode->height},
-          m_w_api->getDisplayScale(display_name, *source_mode).value_or(Rational {0, 1}),
+          resolution_scale,
           refresh_rate,
           win_utils::isPrimary(*source_mode),
           {static_cast<int>(source_mode->position.x), static_cast<int>(source_mode->position.y)},
-          m_w_api->getHdrState(best_path)
+          hdr_state
         };
 
         EnumeratedDevice device;

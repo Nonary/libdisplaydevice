@@ -27,7 +27,9 @@ namespace display_device {
     [[nodiscard]] bool isApiAccessAvailable() const override;
 
     /** For details @see WinDisplayDeviceInterface::enumAvailableDevices */
-    [[nodiscard]] EnumeratedDeviceList enumAvailableDevices() const override;
+    [[nodiscard]] EnumeratedDeviceList enumAvailableDevices(
+      DeviceEnumerationDetail detail = DeviceEnumerationDetail::Full
+    ) const override;
 
     /** For details @see WinDisplayDeviceInterface::getDisplayName */
     [[nodiscard]] std::string getDisplayName(const std::string &device_id) const override;
