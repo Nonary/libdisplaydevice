@@ -102,6 +102,59 @@ namespace display_device {
     // Forward declaration to allow use before definition within this TU
     std::string toUtf8(const WinApiLayerInterface &w_api, const std::wstring &value);
 
+    std::string normalizeDisplayName(std::string name) {
+      boost::algorithm::to_lower(name);
+      constexpr std::string_view prefix = R"(\\.\)";
+      if (name.rfind(prefix.data(), 0) == 0) {
+        name.erase(0, prefix.size());
+      }
+      const auto suffix_pos = name.find('\\');
+      if (suffix_pos != std::string::npos) {
+        name.erase(suffix_pos);
+      }
+      return name;
+    }
+
+    std::optional<HMONITOR> monitorFromDisplayName(const std::string &display_name) {
+      if (display_name.empty()) {
+        return std::nullopt;
+      }
+
+      const auto normalized_target = normalizeDisplayName(display_name);
+      struct EnumData {
+        std::string normalized_target;
+        HMONITOR monitor = nullptr;
+      };
+
+      EnumData data {normalized_target, nullptr};
+      EnumDisplayMonitors(
+        nullptr,
+        nullptr,
+        [](HMONITOR monitor, HDC, LPRECT, LPARAM param) -> BOOL {
+          auto *user_data = reinterpret_cast<EnumData *>(param);
+          MONITORINFOEXA info {sizeof(MONITORINFOEXA)};
+          if (!GetMonitorInfoA(monitor, &info)) {
+            return TRUE;
+          }
+
+          std::string monitor_name(info.szDevice);
+          if (normalizeDisplayName(std::move(monitor_name)) == user_data->normalized_target) {
+            user_data->monitor = monitor;
+            return FALSE;
+          }
+
+          return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&data)
+      );
+
+      if (data.monitor != nullptr) {
+        return data.monitor;
+      }
+
+      return std::nullopt;
+    }
+
     /** @brief Dumps the result of @see queryDisplayConfig into a string */
     std::string dumpPath(const DISPLAYCONFIG_PATH_INFO &info) {
       std::ostringstream output;
@@ -498,7 +551,6 @@ namespace display_device {
   }
 
   std::optional<PathAndModeData> WinApiLayer::queryDisplayConfig(QueryType type) const {
-    ApiCallTimer timer("WinApiLayer::queryDisplayConfig", queryTypeToString(type));
     auto make_flags = [&](bool virtual_mode_aware) -> UINT32 {
       UINT32 f = (type == QueryType::Active) ? QDC_ONLY_ACTIVE_PATHS : QDC_ALL_PATHS;
       if (virtual_mode_aware) {
@@ -730,7 +782,6 @@ namespace display_device {
   }
 
   std::string WinApiLayer::getDeviceId(const DISPLAYCONFIG_PATH_INFO &path) const {
-    ApiCallTimer timer("WinApiLayer::getDeviceId", pathIdentifier(path));
     const auto device_path {getMonitorDevicePathWstr(*this, path)};
     if (device_path.empty()) {
       // Error already logged
@@ -813,7 +864,6 @@ namespace display_device {
   }
 
   std::vector<std::byte> WinApiLayer::getEdid(const DISPLAYCONFIG_PATH_INFO &path) const {
-    ApiCallTimer timer("WinApiLayer::getEdid", pathIdentifier(path));
     const auto device_path {getMonitorDevicePathWstr(*this, path)};
     if (device_path.empty()) {
       // Error already logged
@@ -825,12 +875,10 @@ namespace display_device {
   }
 
   std::string WinApiLayer::getMonitorDevicePath(const DISPLAYCONFIG_PATH_INFO &path) const {
-    ApiCallTimer timer("WinApiLayer::getMonitorDevicePath", pathIdentifier(path));
     return toUtf8(*this, getMonitorDevicePathWstr(*this, path));
   }
 
   std::string WinApiLayer::getFriendlyName(const DISPLAYCONFIG_PATH_INFO &path) const {
-    ApiCallTimer timer("WinApiLayer::getFriendlyName", pathIdentifier(path));
     DISPLAYCONFIG_TARGET_DEVICE_NAME target_name = {};
     target_name.header.adapterId = path.targetInfo.adapterId;
     target_name.header.id = path.targetInfo.id;
@@ -847,7 +895,6 @@ namespace display_device {
   }
 
   std::string WinApiLayer::getDisplayName(const DISPLAYCONFIG_PATH_INFO &path) const {
-    ApiCallTimer timer("WinApiLayer::getDisplayName", pathIdentifier(path));
     DISPLAYCONFIG_SOURCE_DEVICE_NAME source_name = {};
     source_name.header.id = path.sourceInfo.id;
     source_name.header.adapterId = path.sourceInfo.adapterId;
@@ -1072,7 +1119,7 @@ namespace display_device {
     return Resolution {static_cast<unsigned int>(active.cx), static_cast<unsigned int>(active.cy)};
   }
 
-  std::vector<DisplayMode> WinApiLayer::getSupportedDisplayModes(const DISPLAYCONFIG_PATH_INFO &path) const {
+    std::vector<DisplayMode> WinApiLayer::getSupportedDisplayModes(const DISPLAYCONFIG_PATH_INFO &path) const {
     ApiCallTimer timer("WinApiLayer::getSupportedDisplayModes", pathIdentifier(path));
     const std::string display_name = getDisplayName(path);
     if (display_name.empty()) {
@@ -1128,6 +1175,9 @@ namespace display_device {
       target_name.header.id = path.targetInfo.id;
       target_name.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
       target_name.header.size = sizeof(target_name);
+
+      const auto normalized_display_name = normalizeDisplayName(display_name);
+      const auto target_monitor = monitorFromDisplayName(display_name);
 
       std::optional<UINT32> connector_instance;
       const LONG target_result {DisplayConfigGetDeviceInfo(&target_name.header)};
@@ -1245,7 +1295,12 @@ namespace display_device {
 
           const std::wstring dxgi_name_w {output_desc.DeviceName};
           const auto dxgi_display_name = toUtf8(*this, dxgi_name_w);
-          if (!boost::iequals(dxgi_display_name, display_name)) {
+          const bool monitor_matches = target_monitor && output_desc.Monitor && *target_monitor == output_desc.Monitor;
+          bool name_matches = false;
+          if (!normalized_display_name.empty()) {
+            name_matches = normalizeDisplayName(dxgi_display_name) == normalized_display_name;
+          }
+          if (!name_matches && !monitor_matches) {
             continue;
           }
 
