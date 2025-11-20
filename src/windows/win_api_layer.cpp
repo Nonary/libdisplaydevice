@@ -90,7 +90,7 @@ namespace display_device {
 
       ~ApiCallTimer() {
         const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_start);
-        DD_LOG(info) << m_name << (m_detail.empty() ? "" : " (" + m_detail + ")") << " completed in " << elapsed.count() << " ms";
+        DD_LOG(debug) << m_name << (m_detail.empty() ? "" : " (" + m_detail + ")") << " completed in " << elapsed.count() << " ms";
       }
 
     private:
