@@ -54,6 +54,9 @@ namespace display_device {
   }
 
   namespace {
+    constexpr DWORD QUERY_ERROR_COOLDOWN_MS = 250;
+    constexpr int MAX_TOPOLOGY_JOG_ATTEMPTS = 5;
+
     std::string queryTypeToString(QueryType type) {
       switch (type) {
         case QueryType::Active:
@@ -641,7 +644,12 @@ namespace display_device {
         SDC_TOPOLOGY_CLONE
       };
 
+      int jog_attempts = 0;
       for (const auto flag : topology_flags) {
+        if (jog_attempts >= MAX_TOPOLOGY_JOG_ATTEMPTS) {
+          break;
+        }
+        ++jog_attempts;
         const LONG topo_result = ::SetDisplayConfig(0, nullptr, 0, nullptr, SDC_APPLY | flag);
         log_result(topo_result, "SetDisplayConfig(topology jog)");
         if (topo_result == ERROR_SUCCESS) {
@@ -682,6 +690,7 @@ namespace display_device {
           }
         }
         DD_LOG(error) << getErrorString(result) << " failed 'to get display buffer size's!";
+        ::Sleep(QUERY_ERROR_COOLDOWN_MS);
         continue;
       }
 
@@ -690,12 +699,29 @@ namespace display_device {
 
       // Bounded retry with backoff if topology is changing.
       constexpr int kMaxTries = 9;
+      int aggregated_failures = 0;
+      LONG last_error = ERROR_SUCCESS;
+      auto flush_failures = [&]() {
+        if (aggregated_failures > 0) {
+          DD_LOG(error) << getErrorString(last_error)
+                        << " failed to query display paths and modes (" << aggregated_failures << " attempt"
+                        << (aggregated_failures == 1 ? "" : "s") << ").";
+          aggregated_failures = 0;
+        }
+      };
+      auto record_failure = [&](LONG error) {
+        last_error = error;
+        ++aggregated_failures;
+        ::Sleep(QUERY_ERROR_COOLDOWN_MS);
+      };
+
       for (int tries = 0; tries < kMaxTries; ++tries) {
         UINT32 pc = static_cast<UINT32>(paths.size());
         UINT32 mc = static_cast<UINT32>(modes.size());
         result = QueryDisplayConfig(flags, &pc, paths.data(), &mc, modes.data(), nullptr);
 
         if (result == ERROR_SUCCESS) {
+          flush_failures();
           paths.resize(pc);
           modes.resize(mc);
           const auto sig_now = make_signature(paths, modes);
@@ -761,19 +787,21 @@ namespace display_device {
         if (use_virtual && (result == ERROR_NOT_SUPPORTED || result == ERROR_INVALID_PARAMETER)) {
           DD_LOG(debug) << getErrorString(result)
                         << " querying with QDC_VIRTUAL_MODE_AWARE; retrying without it.";
+          record_failure(result);
           break;  // break inner; outer loop will try compat
         }
 
+        record_failure(result);
         // Other errors: log and bail
-        DD_LOG(error) << getErrorString(result)
-                      << " failed to query display paths and modes!";
         continue;
       }
 
       // If we exit the retry loop without success, try compat once (if we were virtual)
       if (use_virtual) {
+        flush_failures();
         continue;
       }
+      flush_failures();
       DD_LOG(error) << "Giving up after retries while querying display config.";
       return std::nullopt;
     }
