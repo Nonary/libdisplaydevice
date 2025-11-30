@@ -138,7 +138,8 @@ namespace display_device::win_utils {
   }
 
   ActiveTopology createFullExtendedTopology(WinDisplayDeviceInterface &win_dd) {
-    const auto devices {win_dd.enumAvailableDevices()};
+    // Use Minimal detail level - we only need device IDs for topology creation.
+    const auto devices {win_dd.enumAvailableDevices(DeviceEnumerationDetail::Minimal)};
     if (devices.empty()) {
       DD_LOG(error) << "Failed to enumerate available devices for full extended topology!";
       return {};

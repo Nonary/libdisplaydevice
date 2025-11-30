@@ -213,7 +213,7 @@ namespace {
     }
 
     void expectedDefaultTopologyGuardCall(InSequence & /* To ensure that sequence is created outside this scope */) {
-      EXPECT_CALL(*m_dd_api, enumAvailableDevices())
+      EXPECT_CALL(*m_dd_api, enumAvailableDevices(display_device::DeviceEnumerationDetail::Minimal))
         .Times(1)
         .WillOnce(Return(CURRENT_DEVICES))
         .RetiresOnSaturation();
@@ -445,7 +445,7 @@ TEST_F_S_MOCKED(TopologyGuard, CurrentTopologyUsedAsFallback) {
     .Times(1)
     .WillOnce(Return(false))
     .RetiresOnSaturation();
-  EXPECT_CALL(*m_dd_api, enumAvailableDevices())
+  EXPECT_CALL(*m_dd_api, enumAvailableDevices(display_device::DeviceEnumerationDetail::Minimal))
     .Times(1)
     .WillOnce(Return(CURRENT_DEVICES))
     .RetiresOnSaturation();
@@ -469,7 +469,7 @@ TEST_F_S_MOCKED(TopologyGuard, SystemSettingsUntouched) {
     .Times(1)
     .WillOnce(Return(false))
     .RetiresOnSaturation();
-  EXPECT_CALL(*m_dd_api, enumAvailableDevices())
+  EXPECT_CALL(*m_dd_api, enumAvailableDevices(display_device::DeviceEnumerationDetail::Minimal))
     .Times(1)
     .WillOnce(Return(CURRENT_DEVICES))
     .RetiresOnSaturation();

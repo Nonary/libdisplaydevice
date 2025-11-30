@@ -101,7 +101,7 @@ namespace {
     }
 
     void expectedDeviceEnumCall(InSequence &sequence /* To ensure that sequence is created outside this scope */, const display_device::EnumeratedDeviceList &devices = DEFAULT_DEVICES) {
-      EXPECT_CALL(*m_dd_api, enumAvailableDevices())
+      EXPECT_CALL(*m_dd_api, enumAvailableDevices(display_device::DeviceEnumerationDetail::Minimal))
         .Times(1)
         .WillOnce(Return(devices))
         .RetiresOnSaturation();
@@ -262,7 +262,7 @@ TEST_F_S_MOCKED(PrepareTopology, FailedToEnumerateDevices) {
   InSequence sequence;
   expectedDefaultCallsUntilTopologyPrep(sequence);
   expectedIsCapturedCall(sequence, false);
-  EXPECT_CALL(*m_dd_api, enumAvailableDevices())
+  EXPECT_CALL(*m_dd_api, enumAvailableDevices(display_device::DeviceEnumerationDetail::Minimal))
     .Times(1)
     .WillOnce(Return(display_device::EnumeratedDeviceList {}))
     .RetiresOnSaturation();

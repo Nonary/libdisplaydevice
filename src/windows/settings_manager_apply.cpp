@@ -119,7 +119,9 @@ namespace display_device {
   }
 
   std::optional<std::tuple<SingleDisplayConfigState, std::string, std::set<std::string>>> SettingsManager::prepareTopology(const SingleDisplayConfiguration &config, const ActiveTopology &topology_before_changes, bool &release_context, bool &system_settings_touched) {
-    const EnumeratedDeviceList devices {m_dd_api->enumAvailableDevices()};
+    // Use Minimal detail level to avoid expensive getSupportedDisplayModes() calls.
+    // This function only needs device IDs and primary device info for topology computation.
+    const EnumeratedDeviceList devices {m_dd_api->enumAvailableDevices(DeviceEnumerationDetail::Minimal)};
     if (devices.empty()) {
       DD_LOG(error) << "Failed to enumerate display devices!";
       return std::nullopt;
