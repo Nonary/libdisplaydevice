@@ -44,6 +44,15 @@ namespace display_device {
           DD_LOG(error) << w_api.getErrorString(result) << " failed to create new topology configuration!";
           return false;
         }
+      } else if (result == ERROR_INVALID_PARAMETER) {
+        DD_LOG(warning) << w_api.getErrorString(result) << " failed to change topology configuration; retrying with supplied config and relaxed changes.";
+
+        flags = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES /* This flag is probably not needed, but who knows really... (not MSDOCS at least) */ | SDC_VIRTUAL_MODE_AWARE;
+        result = w_api.setDisplayConfig(paths, {}, flags);
+        if (result != ERROR_SUCCESS) {
+          DD_LOG(error) << w_api.getErrorString(result) << " failed to create new topology configuration with supplied config!";
+          return false;
+        }
       } else if (result != ERROR_SUCCESS) {
         DD_LOG(error) << w_api.getErrorString(result) << " failed to change topology configuration!";
         return false;
