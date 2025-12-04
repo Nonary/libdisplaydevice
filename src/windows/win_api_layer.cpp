@@ -970,8 +970,21 @@ namespace display_device {
       return result;
     };
 
+    const auto validateAndCallWithFlags = [&](const std::vector<DISPLAYCONFIG_PATH_INFO> &p, const std::vector<DISPLAYCONFIG_MODE_INFO> &m, UINT32 f, const char *reason) -> LONG {
+      if ((f & SDC_APPLY) != 0) {
+        const std::string validate_reason = std::string {reason} + " validation";
+        const UINT32 validate_flags = (f & ~SDC_APPLY) | SDC_VALIDATE;
+        const LONG validate_result = callWithFlags(p, m, validate_flags, validate_reason.c_str());
+        if (validate_result != ERROR_SUCCESS) {
+          return validate_result;
+        }
+      }
+
+      return callWithFlags(p, m, f, reason);
+    };
+
     const auto applyRequestedConfig = [&](UINT32 f, const char *context) -> LONG {
-      return callWithFlags(paths, modes, f, context);
+      return validateAndCallWithFlags(paths, modes, f, context);
     };
 
     const auto stackRecovery = [&]() {
@@ -1013,7 +1026,7 @@ namespace display_device {
       const auto display_data = queryDisplayConfig(QueryType::All);
       if (display_data && !display_data->m_paths.empty()) {
         static constexpr UINT32 reenum_flags = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_FORCE_MODE_ENUMERATION | SDC_VIRTUAL_MODE_AWARE;
-        static_cast<void>(callWithFlags(display_data->m_paths, display_data->m_modes, reenum_flags, "post-recovery forced mode enumeration"));
+        static_cast<void>(validateAndCallWithFlags(display_data->m_paths, display_data->m_modes, reenum_flags, "post-recovery forced mode enumeration"));
       }
     };
 
@@ -1024,15 +1037,13 @@ namespace display_device {
     }
 
     if (result != ERROR_SUCCESS) {
-      bool have_paths = false;
       auto forceEnumeration = [&](QueryType type, const char *label) -> bool {
         const auto display_data = queryDisplayConfig(type);
         if (!display_data || display_data->m_paths.empty()) {
           return false;
         }
-        have_paths = true;
         static constexpr UINT32 reenum_flags = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_FORCE_MODE_ENUMERATION | SDC_VIRTUAL_MODE_AWARE;
-        const LONG reenum_result = callWithFlags(display_data->m_paths, display_data->m_modes, reenum_flags, label);
+        const LONG reenum_result = validateAndCallWithFlags(display_data->m_paths, display_data->m_modes, reenum_flags, label);
         if (reenum_result == ERROR_SUCCESS) {
           result = applyRequestedConfig(flags, "post-force-enumeration apply");
         } else {
@@ -1045,7 +1056,7 @@ namespace display_device {
         static_cast<void>(forceEnumeration(QueryType::Active, "forced mode enumeration (active-only)"));
       }
 
-      if (!have_paths && result != ERROR_SUCCESS) {
+      if (result != ERROR_SUCCESS) {
         stackRecovery();
         result = applyRequestedConfig(flags, "post-recovery setDisplayConfig");
       }
