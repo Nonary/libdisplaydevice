@@ -381,11 +381,15 @@ namespace display_device {
       }
     }
 
-    const auto try_change {[&](const HdrStateMap &new_states, const auto info_preamble, const auto error_log) {
-      if (current_hdr_states != new_states) {
+    const auto try_change {[&](const HdrStateMap &new_states, const bool force_apply, const auto info_preamble, const auto error_log) {
+      if (force_apply || current_hdr_states != new_states) {
         system_settings_touched = true;
 
-        DD_LOG(info) << info_preamble << toJson(new_states);
+        if (current_hdr_states != new_states) {
+          DD_LOG(info) << info_preamble << toJson(new_states);
+        } else {
+          DD_LOG(debug) << "Forcing HDR state apply even though reported states already match.";
+        }
         if (!m_dd_api->setHdrStates(new_states)) {
           DD_LOG(error) << error_log;
           return false;
@@ -402,7 +406,7 @@ namespace display_device {
       const auto original_hdr_states {cached_hdr_states.empty() ? current_hdr_states : cached_hdr_states};
       const auto new_hdr_states {win_utils::computeNewHdrStates(config.m_hdr_state, configuring_primary_devices, device_to_configure, additional_devices_to_configure, original_hdr_states)};
 
-      if (!try_change(new_hdr_states, "Changing HDR states to:\n", "Failed to apply new configuration, because new HDR states could not be set!")) {
+      if (!try_change(new_hdr_states, true, "Changing HDR states to:\n", "Failed to apply new configuration, because new HDR states could not be set!")) {
         // Error already logged
         return false;
       }
@@ -413,7 +417,7 @@ namespace display_device {
     }
 
     if (might_need_to_restore) {
-      if (!try_change(cached_hdr_states, "Changing HDR states back to:\n", "Failed to restore original HDR states!")) {
+      if (!try_change(cached_hdr_states, false, "Changing HDR states back to:\n", "Failed to restore original HDR states!")) {
         // Error already logged
         return false;
       }

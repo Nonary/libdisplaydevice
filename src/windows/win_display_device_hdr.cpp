@@ -35,14 +35,15 @@ namespace display_device {
             return false;
           }
 
-          if (state != *current_state_int) {
-            if (!w_api.setHdrState(*path, state)) {
-              // Error already logged
-              return false;
-            }
-
-            current_state = current_state_int;
+          // Always attempt to apply the requested state. We've observed cases (notably with
+          // virtual displays) where the queried state can lag or be unreliable shortly after
+          // display topology changes, which would cause us to skip setting HDR entirely.
+          if (!w_api.setHdrState(*path, state)) {
+            // Error already logged
+            return false;
           }
+
+          current_state = current_state_int;
 
           return true;
         }
