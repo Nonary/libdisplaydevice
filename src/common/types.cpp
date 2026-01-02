@@ -151,7 +151,12 @@ namespace display_device {
   }
 
   bool operator==(const EnumeratedDevice &lhs, const EnumeratedDevice &rhs) {
-    return lhs.m_device_id == rhs.m_device_id && lhs.m_display_name == rhs.m_display_name && lhs.m_friendly_name == rhs.m_friendly_name && lhs.m_edid == rhs.m_edid && lhs.m_info == rhs.m_info &&
+    return lhs.m_device_id == rhs.m_device_id &&
+           lhs.m_monitor_device_path == rhs.m_monitor_device_path &&
+           lhs.m_display_name == rhs.m_display_name &&
+           lhs.m_friendly_name == rhs.m_friendly_name &&
+           lhs.m_edid == rhs.m_edid &&
+           lhs.m_info == rhs.m_info &&
            lhs.m_supported_refresh_rates == rhs.m_supported_refresh_rates;
   }
 

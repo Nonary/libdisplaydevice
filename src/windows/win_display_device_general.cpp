@@ -50,6 +50,7 @@ namespace display_device {
       // In case we have no active source, we will take the first available source id
       const auto source_id_index {data.m_active_source.value_or(data.m_source_id_to_path_index.begin()->first)};
       const auto &best_path {display_data->m_paths.at(data.m_source_id_to_path_index.at(source_id_index))};
+      const auto monitor_device_path {m_w_api->getMonitorDevicePath(best_path)};
       const auto friendly_name {m_w_api->getFriendlyName(best_path)};
       const bool is_active {win_utils::isActive(best_path)};
       const auto source_mode {is_active ? win_utils::getSourceMode(win_utils::getSourceIndex(best_path, display_data->m_modes), display_data->m_modes) : nullptr};
@@ -124,6 +125,7 @@ namespace display_device {
 
         EnumeratedDevice device;
         device.m_device_id = device_id;
+        device.m_monitor_device_path = monitor_device_path;
         device.m_display_name = display_name;
         device.m_friendly_name = friendly_name;
         device.m_edid = edid;
@@ -133,6 +135,7 @@ namespace display_device {
       } else {
         EnumeratedDevice device;
         device.m_device_id = device_id;
+        device.m_monitor_device_path = monitor_device_path;
         device.m_display_name = display_name;
         device.m_friendly_name = friendly_name;
         device.m_edid = edid;

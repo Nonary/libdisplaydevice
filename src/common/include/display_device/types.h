@@ -107,6 +107,7 @@ namespace display_device {
     };
 
     std::string m_device_id {}; /**< A unique device ID used by this API to identify the device. */
+    std::string m_monitor_device_path {}; /**< OS-reported monitor device path (adapter->target), stable per device instance. */
     std::string m_display_name {}; /**< A logical name representing given by the OS for a display. */
     std::string m_friendly_name {}; /**< A human-readable name for the device. */
     std::optional<EdidData> m_edid {}; /**< Some basic parsed EDID data. */
