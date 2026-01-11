@@ -38,8 +38,17 @@ namespace display_device {
       if (result == ERROR_GEN_FAILURE) {
         DD_LOG(warning) << w_api.getErrorString(result) << " failed to change topology using the topology from Windows DB! Asking Windows to create the topology.";
 
+        // When falling back to SDC_USE_SUPPLIED_DISPLAY_CONFIG, explicitly include all available
+        // paths and mark non-topology paths inactive. Some systems/drivers appear to preserve
+        // previously active paths if they're omitted from the supplied config.
+        const auto full_paths {win_utils::makeFullPathsForNewTopology(new_topology, path_data, display_data.m_paths)};
+        if (full_paths.empty()) {
+          // Error already logged
+          return false;
+        }
+
         flags = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES /* This flag is probably not needed, but who knows really... (not MSDOCS at least) */ | SDC_VIRTUAL_MODE_AWARE;
-        result = w_api.setDisplayConfig(paths, {}, flags);
+        result = w_api.setDisplayConfig(full_paths, {}, flags);
         if (result != ERROR_SUCCESS) {
           DD_LOG(error) << w_api.getErrorString(result) << " failed to create new topology configuration!";
           return false;
@@ -47,8 +56,14 @@ namespace display_device {
       } else if (result == ERROR_INVALID_PARAMETER) {
         DD_LOG(warning) << w_api.getErrorString(result) << " failed to change topology configuration; retrying with supplied config and relaxed changes.";
 
+        const auto full_paths {win_utils::makeFullPathsForNewTopology(new_topology, path_data, display_data.m_paths)};
+        if (full_paths.empty()) {
+          // Error already logged
+          return false;
+        }
+
         flags = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES /* This flag is probably not needed, but who knows really... (not MSDOCS at least) */ | SDC_VIRTUAL_MODE_AWARE;
-        result = w_api.setDisplayConfig(paths, {}, flags);
+        result = w_api.setDisplayConfig(full_paths, {}, flags);
         if (result != ERROR_SUCCESS) {
           DD_LOG(error) << w_api.getErrorString(result) << " failed to create new topology configuration with supplied config!";
           return false;

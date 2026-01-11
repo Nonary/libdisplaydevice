@@ -57,6 +57,17 @@ namespace display_device::win_utils {
   void setActive(DISPLAYCONFIG_PATH_INFO &path);
 
   /**
+   * @brief Mark the display device path as inactive.
+   * @param path Path to modify.
+   * @see WinApiLayerInterface::queryDisplayConfig on how to get paths from the system.
+   * @examples
+   * DISPLAYCONFIG_PATH_INFO path;
+   * clearActive(path);
+   * @examples_end
+   */
+  void clearActive(DISPLAYCONFIG_PATH_INFO &path);
+
+  /**
    * @brief Check if the display's source mode is primary - if the associated device is a primary display device.
    * @param mode Mode to check.
    * @returns True if the mode's origin point is at (0, 0) coordinate (primary), false otherwise.
@@ -247,6 +258,27 @@ namespace display_device::win_utils {
    * @return A list of path that will make up new topology, or an empty list if function fails.
    */
   [[nodiscard]] std::vector<DISPLAYCONFIG_PATH_INFO> makePathsForNewTopology(const ActiveTopology &new_topology, const PathSourceIndexDataMap &path_source_data, const std::vector<DISPLAYCONFIG_PATH_INFO> &paths);
+
+  /**
+   * @brief Build a full display path list for the requested topology.
+   *
+   * Unlike makePathsForNewTopology(), this returns a vector with the same
+   * length/order as the input `paths`, with exactly the selected topology paths
+   * marked active and all others marked inactive. This is useful when applying
+   * the topology with SDC_USE_SUPPLIED_DISPLAY_CONFIG to ensure previously
+   * active paths are explicitly deactivated.
+   *
+   * @param new_topology Topology that we want to have in the end.
+   * @param path_source_data Collected source data from paths.
+   * @param paths Display paths that were used for collecting source data.
+   * @return A full list of paths representing the new topology, or an empty
+   *         list if the function fails.
+   */
+  [[nodiscard]] std::vector<DISPLAYCONFIG_PATH_INFO> makeFullPathsForNewTopology(
+    const ActiveTopology &new_topology,
+    const PathSourceIndexDataMap &path_source_data,
+    const std::vector<DISPLAYCONFIG_PATH_INFO> &paths
+  );
 
   /**
    * @brief Get all the missing duplicate device ids for the provided device ids.

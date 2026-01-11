@@ -68,6 +68,10 @@ namespace display_device::win_utils {
     path.flags |= DISPLAYCONFIG_PATH_ACTIVE;
   }
 
+  void clearActive(DISPLAYCONFIG_PATH_INFO &path) {
+    path.flags &= ~DISPLAYCONFIG_PATH_ACTIVE;
+  }
+
   bool isPrimary(const DISPLAYCONFIG_SOURCE_MODE &mode) {
     return mode.position.x == 0 && mode.position.y == 0;
   }
@@ -396,6 +400,114 @@ namespace display_device::win_utils {
       DD_LOG(error) << "Failed to make paths for new topology!";
     }
     return new_paths;
+  }
+
+  std::vector<DISPLAYCONFIG_PATH_INFO> makeFullPathsForNewTopology(const ActiveTopology &new_topology, const PathSourceIndexDataMap &path_source_data, const std::vector<DISPLAYCONFIG_PATH_INFO> &paths) {
+    std::vector<DISPLAYCONFIG_PATH_INFO> full_paths {paths};
+
+    // Ensure the caller can safely pass an empty modes list by wiping mode indexes.
+    // Also explicitly deactivate everything first so that only the selected topology
+    // remains active after applying the configuration.
+    for (auto &path : full_paths) {
+      win_utils::setSourceIndex(path, std::nullopt);
+      win_utils::setTargetIndex(path, std::nullopt);
+      win_utils::setDesktopIndex(path, std::nullopt);
+      win_utils::setCloneGroupId(path, std::nullopt);
+      win_utils::clearActive(path);
+    }
+
+    UINT32 group_id {0};
+    std::unordered_map<std::string, std::unordered_set<UINT32>> used_source_ids_per_adapter;
+    const auto is_source_id_already_used = [&used_source_ids_per_adapter](const LUID &adapter_id, UINT32 source_id) {
+      auto entry_it {used_source_ids_per_adapter.find(toString(adapter_id))};
+      if (entry_it != std::end(used_source_ids_per_adapter)) {
+        return entry_it->second.contains(source_id);
+      }
+
+      return false;
+    };
+
+    for (const auto &group : new_topology) {
+      std::unordered_map<std::string, UINT32> used_source_ids_per_adapter_per_group;
+      const auto get_already_used_source_id_in_group = [&used_source_ids_per_adapter_per_group](const LUID &adapter_id) -> std::optional<UINT32> {
+        auto entry_it {used_source_ids_per_adapter_per_group.find(toString(adapter_id))};
+        if (entry_it != std::end(used_source_ids_per_adapter_per_group)) {
+          return entry_it->second;
+        }
+
+        return std::nullopt;
+      };
+
+      for (const std::string &device_id : group) {
+        auto path_source_data_it {path_source_data.find(device_id)};
+        if (path_source_data_it == std::end(path_source_data)) {
+          DD_LOG(warning) << "Device " << device_id << " does not exist in the available path source data!";
+          return {};
+        }
+
+        std::size_t selected_path_index {};
+        const auto &source_data {path_source_data_it->second};
+
+        const auto already_used_source_id {get_already_used_source_id_in_group(source_data.m_adapter_id)};
+        if (already_used_source_id) {
+          auto path_index_it {source_data.m_source_id_to_path_index.find(*already_used_source_id)};
+          if (path_index_it == std::end(source_data.m_source_id_to_path_index)) {
+            DD_LOG(error) << "Device " << device_id << " does not have a path with a source id " << *already_used_source_id << "!";
+            return {};
+          }
+
+          selected_path_index = path_index_it->second;
+        } else {
+          std::optional<std::size_t> path_index_candidate;
+          UINT32 used_source_id {};
+          for (const auto [source_id, index] : source_data.m_source_id_to_path_index) {
+            if (is_source_id_already_used(source_data.m_adapter_id, source_id)) {
+              continue;
+            }
+
+            if (!path_index_candidate || index < *path_index_candidate) {
+              path_index_candidate = index;
+              used_source_id = source_id;
+            }
+          }
+
+          if (!path_index_candidate) {
+            DD_LOG(error) << "Device " << device_id << " cannot be enabled as the adapter has no more free source ids (GPU limitation)!";
+            return {};
+          }
+
+          selected_path_index = *path_index_candidate;
+          used_source_ids_per_adapter[toString(source_data.m_adapter_id)].insert(used_source_id);
+          used_source_ids_per_adapter_per_group[toString(source_data.m_adapter_id)] = used_source_id;
+        }
+
+        if (selected_path_index >= full_paths.size()) {
+          DD_LOG(error) << "Selected path index " << selected_path_index << " is out of range! List size: " << full_paths.size();
+          return {};
+        }
+
+        auto &selected_path = full_paths[selected_path_index];
+        win_utils::setCloneGroupId(selected_path, group_id);
+        win_utils::setActive(selected_path);
+      }
+
+      group_id++;
+    }
+
+    // If we don't have any active paths, treat as failure to match makePathsForNewTopology().
+    bool any_active {false};
+    for (const auto &p : full_paths) {
+      if (win_utils::isActive(p)) {
+        any_active = true;
+        break;
+      }
+    }
+    if (!any_active) {
+      DD_LOG(error) << "Failed to make full paths for new topology!";
+      return {};
+    }
+
+    return full_paths;
   }
 
   std::set<std::string> getAllDeviceIdsAndMatchingDuplicates(const WinApiLayerInterface &w_api, const std::set<std::string> &device_ids) {

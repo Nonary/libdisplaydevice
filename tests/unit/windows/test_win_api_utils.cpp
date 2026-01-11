@@ -144,6 +144,16 @@ namespace {
     }
   }
 
+  void wipeIndexesAndDeactivatePaths(std::vector<DISPLAYCONFIG_PATH_INFO> &paths) {
+    for (auto &path : paths) {
+      display_device::win_utils::setSourceIndex(path, std::nullopt);
+      display_device::win_utils::setTargetIndex(path, std::nullopt);
+      display_device::win_utils::setDesktopIndex(path, std::nullopt);
+      display_device::win_utils::setCloneGroupId(path, std::nullopt);
+      display_device::win_utils::clearActive(path);
+    }
+  }
+
 }  // namespace
 
 TEST_F_S_MOCKED(IsAvailable) {
@@ -175,8 +185,17 @@ TEST_F_S_MOCKED(IsActiveAndSetActive) {
   display_device::win_utils::setActive(contains_active_path);
 
   EXPECT_EQ(display_device::win_utils::isActive(inactive_path), true);
-  EXPECT_EQ(display_device::win_utils::isActive(only_active_path), true);
-  EXPECT_EQ(display_device::win_utils::isActive(contains_active_path), true);
+  EXPECT_EQ(display_device::win_utils::isActive(only_active_path), true);       
+  EXPECT_EQ(display_device::win_utils::isActive(contains_active_path), true);   
+}
+
+TEST_F_S_MOCKED(ClearActive) {
+  DISPLAYCONFIG_PATH_INFO path;
+  path.flags = DISPLAYCONFIG_PATH_ACTIVE;
+
+  EXPECT_EQ(display_device::win_utils::isActive(path), true);
+  display_device::win_utils::clearActive(path);
+  EXPECT_EQ(display_device::win_utils::isActive(path), false);
 }
 
 TEST_F_S_MOCKED(IsPrimary) {
@@ -678,6 +697,28 @@ TEST_F_S_MOCKED(MakePathsForNewTopology) {
   display_device::win_utils::setCloneGroupId(expected_paths.at(3), 2);
 
   EXPECT_EQ(display_device::win_utils::makePathsForNewTopology(new_topology, EXPECTED_SOURCE_INDEX_DATA, paths), expected_paths);
+}
+
+TEST_F_S_MOCKED(MakeFullPathsForNewTopology) {
+  const display_device::ActiveTopology new_topology {{"DeviceId1"}, {"DeviceId2"}, {"DeviceId3", "DeviceId4"}};
+  const std::vector<DISPLAYCONFIG_PATH_INFO> paths {PATHS_WITH_SOURCE_IDS};
+
+  auto expected_paths {paths};
+  wipeIndexesAndDeactivatePaths(expected_paths);
+
+  display_device::win_utils::setCloneGroupId(expected_paths.at(0), 0);
+  display_device::win_utils::setActive(expected_paths.at(0));
+
+  display_device::win_utils::setCloneGroupId(expected_paths.at(1), 1);
+  display_device::win_utils::setActive(expected_paths.at(1));
+
+  display_device::win_utils::setCloneGroupId(expected_paths.at(3), 2);
+  display_device::win_utils::setActive(expected_paths.at(3));
+
+  display_device::win_utils::setCloneGroupId(expected_paths.at(5), 2);
+  display_device::win_utils::setActive(expected_paths.at(5));
+
+  EXPECT_EQ(display_device::win_utils::makeFullPathsForNewTopology(new_topology, EXPECTED_SOURCE_INDEX_DATA, paths), expected_paths);
 }
 
 TEST_F_S_MOCKED(MakePathsForNewTopology, DevicesFromSameAdapterInAGroup) {
