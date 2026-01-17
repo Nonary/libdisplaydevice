@@ -260,7 +260,11 @@ namespace display_device {
     }
 
     if (might_need_to_restore) {
-      if (!try_change(cached_primary_device, "Changing primary display back to:\n", "Failed to restore original primary device!")) {
+      const auto devices_in_topology {win_utils::flattenTopology(new_state.m_modified.m_topology)};
+      if (!devices_in_topology.contains(cached_primary_device)) {
+        DD_LOG(warning) << "Skipping restore of original primary device " << toJson(cached_primary_device)
+                        << " because it is not present in the active topology.";
+      } else if (!try_change(cached_primary_device, "Changing primary display back to:\n", "Failed to restore original primary device!")) {
         // Error already logged
         return false;
       }
