@@ -409,6 +409,11 @@ namespace display_device {
       static const GUID monitor_guid {0xe6f07b5f, 0xee97, 0x4a90, {0xb0, 0x76, 0x33, 0xf5, 0x7b, 0xf4, 0xea, 0xa7}};
 
       HDEVINFO dev_info_handle {SetupDiGetClassDevsW(&monitor_guid, nullptr, nullptr, DIGCF_DEVICEINTERFACE)};
+      if (dev_info_handle == INVALID_HANDLE_VALUE) {
+        DD_LOG(warning) << w_api.getErrorString(static_cast<LONG>(GetLastError()))
+                        << " \"SetupDiGetClassDevsW\" failed.";
+        return std::nullopt;
+      }
       if (dev_info_handle) {
         const auto dev_info_handle_cleanup {
           boost::scope::scope_exit([&dev_info_handle, &w_api]() {
@@ -584,95 +589,11 @@ namespace display_device {
 
     static std::size_t last_sig = 0;
 
-    bool headless_detected = false;
-
-    auto should_skip_recovery_for_headless = [&](const char *context, LONG error_code) -> bool {
-      if (headless_detected) {
-        return true;
-      }
-
-      if (GetSystemMetrics(SM_CMONITORS) > 0) {
-        return false;
-      }
-
-      bool any_active_output = false;
-      for (DWORD index = 0;; ++index) {
-        DISPLAY_DEVICEW device = {};
-        device.cb = sizeof(device);
-        if (!EnumDisplayDevicesW(nullptr, index, &device, 0)) {
-          break;
-        }
-        if ((device.StateFlags & DISPLAY_DEVICE_ACTIVE) != 0) {
-          any_active_output = true;
-          break;
-        }
-      }
-
-      if (any_active_output) {
-        return false;
-      }
-
-      headless_detected = true;
-      DD_LOG(info) << context << " (" << getErrorString(error_code)
-                   << "); zero active monitors detected, skipping display stack recovery until one becomes available.";
-      return true;
-    };
-
-    auto attempt_stack_recovery = [&](const char *context) -> bool {
-      if (detail::current_display_recovery_behavior() == DisplayRecoveryBehavior::Skip) {
-        DD_LOG(debug) << context << "; skipping display stack recovery (behavior=skip).";
-        return false;
-      }
-
-      DD_LOG(info) << context << "; attempting display stack recovery.";
-
-      auto log_result = [&](LONG result, const char *label) {
-        if (result == ERROR_SUCCESS) {
-          DD_LOG(info) << label << " succeeded.";
-        } else {
-          DD_LOG(warning) << getErrorString(result) << " while executing " << label << ".";
-        }
-      };
-
-      const LONG restore_db = ::SetDisplayConfig(0, nullptr, 0, nullptr, SDC_APPLY | SDC_USE_DATABASE_CURRENT);
-      log_result(restore_db, "SetDisplayConfig(SDC_USE_DATABASE_CURRENT)");
-
-      static constexpr std::array<UINT32, 4> topology_flags = {
-        SDC_TOPOLOGY_INTERNAL,
-        SDC_TOPOLOGY_EXTERNAL,
-        SDC_TOPOLOGY_EXTEND,
-        SDC_TOPOLOGY_CLONE
-      };
-
-      int jog_attempts = 0;
-      for (const auto flag : topology_flags) {
-        if (jog_attempts >= MAX_TOPOLOGY_JOG_ATTEMPTS) {
-          break;
-        }
-        ++jog_attempts;
-        const LONG topo_result = ::SetDisplayConfig(0, nullptr, 0, nullptr, SDC_APPLY | flag);
-        log_result(topo_result, "SetDisplayConfig(topology jog)");
-        if (topo_result == ERROR_SUCCESS) {
-          break;
-        }
-      }
-
-      const LONG cds_reset = ::ChangeDisplaySettingsExA(nullptr, nullptr, nullptr, CDS_RESET, nullptr);
-      if (cds_reset != DISP_CHANGE_SUCCESSFUL) {
-        DD_LOG(warning) << "ChangeDisplaySettingsExA with CDS_RESET failed: " << cds_reset;
-      } else {
-        DD_LOG(info) << "ChangeDisplaySettingsExA with CDS_RESET succeeded.";
-      }
-      return true;
-    };
-
     for (int attempt = 0; attempt < 2; ++attempt) {
       const bool use_virtual = (attempt == 0);
       const UINT32 flags = make_flags(use_virtual);
 
       // First get a baseline size
-      int recovery_budget = 3;
-    retry_get_sizes:
       UINT32 path_count = 0, mode_count = 0;
       LONG result = GetDisplayConfigBufferSizes(flags, &path_count, &mode_count);
       if (result != ERROR_SUCCESS) {
@@ -680,14 +601,6 @@ namespace display_device {
           DD_LOG(debug) << getErrorString(result)
                         << " getting buffer sizes with QDC_VIRTUAL_MODE_AWARE; retrying without it.";
           continue;  // try compat
-        }
-        if ((result == ERROR_NOT_SUPPORTED || result == ERROR_GEN_FAILURE || result == ERROR_INVALID_PARAMETER) && recovery_budget-- > 0) {
-          if (should_skip_recovery_for_headless("GetDisplayConfigBufferSizes failure", result)) {
-            return std::nullopt;
-          }
-          if (attempt_stack_recovery("GetDisplayConfigBufferSizes failure")) {
-            goto retry_get_sizes;
-          }
         }
         DD_LOG(error) << getErrorString(result) << " failed 'to get display buffer size's!";
         ::Sleep(QUERY_ERROR_COOLDOWN_MS);
@@ -751,14 +664,6 @@ namespace display_device {
           if (!grew) {
             result = GetDisplayConfigBufferSizes(flags, &path_count, &mode_count);
             if (result != ERROR_SUCCESS) {
-              if ((result == ERROR_NOT_SUPPORTED || result == ERROR_GEN_FAILURE || result == ERROR_INVALID_PARAMETER) && recovery_budget-- > 0) {
-                if (should_skip_recovery_for_headless("GetDisplayConfigBufferSizes retry failure", result)) {
-                  return std::nullopt;
-                }
-                if (attempt_stack_recovery("GetDisplayConfigBufferSizes retry failure")) {
-                  goto retry_get_sizes;
-                }
-              }
               break;
             }
             if (path_count > paths.size()) {
@@ -773,15 +678,6 @@ namespace display_device {
           const DWORD delay = std::min<DWORD>(500, 25u * (1u << tries));
           ::Sleep(delay);
           continue;
-        }
-
-        if ((result == ERROR_NOT_SUPPORTED || result == ERROR_GEN_FAILURE || result == ERROR_INVALID_PARAMETER) && recovery_budget-- > 0) {
-          if (should_skip_recovery_for_headless("QueryDisplayConfig failure", result)) {
-            return std::nullopt;
-          }
-          if (attempt_stack_recovery("QueryDisplayConfig failure")) {
-            goto retry_get_sizes;
-          }
         }
 
         if (use_virtual && (result == ERROR_NOT_SUPPORTED || result == ERROR_INVALID_PARAMETER)) {
@@ -945,6 +841,10 @@ namespace display_device {
     if ((flags & SDC_APPLY) != 0) {
       invalidateDisplayModeCache();
     }
+    const bool topology_apply =
+      (flags & SDC_TOPOLOGY_SUPPLIED) != 0 ||
+      ((flags & SDC_USE_SUPPLIED_DISPLAY_CONFIG) != 0 && !paths.empty() && modes.empty());
+    const bool recovery_allowed = detail::current_display_recovery_behavior() != DisplayRecoveryBehavior::Skip;
     const auto callWithFlags = [&](const std::vector<DISPLAYCONFIG_PATH_INFO> &p, const std::vector<DISPLAYCONFIG_MODE_INFO> &m, UINT32 f, const char *reason) -> LONG {
       auto invoke = [&](UINT32 actual_flags) -> LONG {
         return ::SetDisplayConfig(
@@ -1060,6 +960,14 @@ namespace display_device {
         if (result == ERROR_INVALID_PARAMETER || result == ERROR_BAD_CONFIGURATION) {
           DD_LOG(warning) << getErrorString(result)
                           << " detected during setDisplayConfig; skipping display stack recovery.";
+          return result;
+        }
+        if (!recovery_allowed) {
+          DD_LOG(debug) << "SetDisplayConfig failure; skipping display stack recovery (behavior=skip).";
+          return result;
+        }
+        if (!topology_apply) {
+          DD_LOG(debug) << "SetDisplayConfig failure; skipping display stack recovery (non-topology apply).";
           return result;
         }
         stackRecovery();
