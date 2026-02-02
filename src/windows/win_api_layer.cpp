@@ -957,11 +957,6 @@ namespace display_device {
       }
 
       if (result != ERROR_SUCCESS) {
-        if (result == ERROR_INVALID_PARAMETER || result == ERROR_BAD_CONFIGURATION) {
-          DD_LOG(warning) << getErrorString(result)
-                          << " detected during setDisplayConfig; skipping display stack recovery.";
-          return result;
-        }
         if (!recovery_allowed) {
           DD_LOG(debug) << "SetDisplayConfig failure; skipping display stack recovery (behavior=skip).";
           return result;
