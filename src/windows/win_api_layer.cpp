@@ -888,46 +888,7 @@ namespace display_device {
     };
 
     const auto stackRecovery = [&]() {
-      DD_LOG(info) << "SetDisplayConfig detected failure; attempting display stack recovery.";
-
-      auto log_result = [&](LONG result, const char *label) {
-        if (result == ERROR_SUCCESS) {
-          DD_LOG(info) << label << " succeeded.";
-        } else {
-          DD_LOG(warning) << getErrorString(result) << " while executing " << label << ".";
-        }
-      };
-
-      const LONG restore_db = ::SetDisplayConfig(0, nullptr, 0, nullptr, SDC_APPLY | SDC_USE_DATABASE_CURRENT);
-      log_result(restore_db, "SetDisplayConfig(SDC_USE_DATABASE_CURRENT)");
-
-      static constexpr std::array<UINT32, 4> topology_flags = {
-        SDC_TOPOLOGY_INTERNAL,
-        SDC_TOPOLOGY_EXTERNAL,
-        SDC_TOPOLOGY_EXTEND,
-        SDC_TOPOLOGY_CLONE
-      };
-
-      for (const auto flag : topology_flags) {
-        const LONG topo_result = ::SetDisplayConfig(0, nullptr, 0, nullptr, SDC_APPLY | flag);
-        log_result(topo_result, "SetDisplayConfig(topology jog)");
-        if (topo_result == ERROR_SUCCESS) {
-          break;
-        }
-      }
-
-      const LONG cds_reset = ::ChangeDisplaySettingsExA(nullptr, nullptr, nullptr, CDS_RESET, nullptr);
-      if (cds_reset != DISP_CHANGE_SUCCESSFUL) {
-        DD_LOG(warning) << "ChangeDisplaySettingsExA with CDS_RESET failed: " << cds_reset;
-      } else {
-        DD_LOG(info) << "ChangeDisplaySettingsExA with CDS_RESET succeeded.";
-      }
-
-      const auto display_data = queryDisplayConfig(QueryType::All);
-      if (display_data && !display_data->m_paths.empty()) {
-        static constexpr UINT32 reenum_flags = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_FORCE_MODE_ENUMERATION | SDC_VIRTUAL_MODE_AWARE;
-        static_cast<void>(validateAndCallWithFlags(display_data->m_paths, display_data->m_modes, reenum_flags, "post-recovery forced mode enumeration"));
-      }
+      recoverDisplayStack();
     };
 
     LONG result = applyRequestedConfig(flags, "initial setDisplayConfig");
@@ -971,6 +932,87 @@ namespace display_device {
     }
 
     return result;
+  }
+
+  void WinApiLayer::recoverDisplayStack() {
+    DD_LOG(info) << "SetDisplayConfig detected failure; attempting display stack recovery.";
+
+    auto log_result = [&](LONG result, const char *label) {
+      if (result == ERROR_SUCCESS) {
+        DD_LOG(info) << label << " succeeded.";
+      } else {
+        DD_LOG(warning) << getErrorString(result) << " while executing " << label << ".";
+      }
+    };
+
+    const LONG restore_db = ::SetDisplayConfig(0, nullptr, 0, nullptr, SDC_APPLY | SDC_USE_DATABASE_CURRENT);
+    log_result(restore_db, "SetDisplayConfig(SDC_USE_DATABASE_CURRENT)");
+
+    static constexpr std::array<UINT32, 4> topology_flags = {
+      SDC_TOPOLOGY_INTERNAL,
+      SDC_TOPOLOGY_EXTERNAL,
+      SDC_TOPOLOGY_EXTEND,
+      SDC_TOPOLOGY_CLONE
+    };
+
+    for (const auto flag : topology_flags) {
+      const LONG topo_result = ::SetDisplayConfig(0, nullptr, 0, nullptr, SDC_APPLY | flag);
+      log_result(topo_result, "SetDisplayConfig(topology jog)");
+      if (topo_result == ERROR_SUCCESS) {
+        break;
+      }
+    }
+
+    const LONG cds_reset = ::ChangeDisplaySettingsExA(nullptr, nullptr, nullptr, CDS_RESET, nullptr);
+    if (cds_reset != DISP_CHANGE_SUCCESSFUL) {
+      DD_LOG(warning) << "ChangeDisplaySettingsExA with CDS_RESET failed: " << cds_reset;
+    } else {
+      DD_LOG(info) << "ChangeDisplaySettingsExA with CDS_RESET succeeded.";
+    }
+
+    const auto display_data = queryDisplayConfig(QueryType::All);
+    if (display_data && !display_data->m_paths.empty()) {
+      auto callWithFlags = [&](const std::vector<DISPLAYCONFIG_PATH_INFO> &p, const std::vector<DISPLAYCONFIG_MODE_INFO> &m, UINT32 f, const char *reason) -> LONG {
+        auto invoke = [&](UINT32 actual_flags) -> LONG {
+          return ::SetDisplayConfig(
+            static_cast<UINT32>(p.size()),
+            p.empty() ? nullptr : const_cast<DISPLAYCONFIG_PATH_INFO *>(p.data()),
+            static_cast<UINT32>(m.size()),
+            m.empty() ? nullptr : const_cast<DISPLAYCONFIG_MODE_INFO *>(m.data()),
+            actual_flags
+          );
+        };
+
+        LONG result = invoke(f);
+        if ((result == ERROR_NOT_SUPPORTED || result == ERROR_INVALID_PARAMETER) && (f & SDC_VIRTUAL_MODE_AWARE)) {
+          const UINT32 compat_flags = (f & ~SDC_VIRTUAL_MODE_AWARE);
+          DD_LOG(warning) << getErrorString(result) << " while applying with SDC_VIRTUAL_MODE_AWARE during " << reason << "; retrying without it.";
+          result = invoke(compat_flags);
+        }
+
+        if (result != ERROR_SUCCESS) {
+          DD_LOG(warning) << getErrorString(result) << " while executing " << reason << ".";
+        }
+
+        return result;
+      };
+
+      auto validateAndCallWithFlags = [&](const std::vector<DISPLAYCONFIG_PATH_INFO> &p, const std::vector<DISPLAYCONFIG_MODE_INFO> &m, UINT32 f, const char *reason) -> LONG {
+        if ((f & SDC_APPLY) != 0) {
+          const std::string validate_reason = std::string {reason} + " validation";
+          const UINT32 validate_flags = (f & ~SDC_APPLY) | SDC_VALIDATE;
+          const LONG validate_result = callWithFlags(p, m, validate_flags, validate_reason.c_str());
+          if (validate_result != ERROR_SUCCESS) {
+            return validate_result;
+          }
+        }
+
+        return callWithFlags(p, m, f, reason);
+      };
+
+      static constexpr UINT32 reenum_flags = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_FORCE_MODE_ENUMERATION | SDC_VIRTUAL_MODE_AWARE;
+      static_cast<void>(validateAndCallWithFlags(display_data->m_paths, display_data->m_modes, reenum_flags, "post-recovery forced mode enumeration"));
+    }
   }
 
   std::optional<HdrState> WinApiLayer::getHdrState(const DISPLAYCONFIG_PATH_INFO &path) const {

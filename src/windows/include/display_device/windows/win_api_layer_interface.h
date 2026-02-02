@@ -215,5 +215,13 @@ namespace display_device {
      * @returns A list of supported modes; empty if enumeration failed.
      */
     [[nodiscard]] virtual std::vector<DisplayMode> getSupportedDisplayModes(const DISPLAYCONFIG_PATH_INFO &path) const = 0;
+
+    /**
+     * @brief Attempt a best-effort display stack recovery.
+     *
+     * This runs a sequence of recovery steps (database restore, topology jog,
+     * CDS_RESET, and forced mode enumeration) to un-wedge the display stack.
+     */
+    virtual void recoverDisplayStack() = 0;
   };
 }  // namespace display_device
