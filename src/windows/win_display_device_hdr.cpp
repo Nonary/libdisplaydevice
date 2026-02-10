@@ -31,6 +31,12 @@ namespace display_device {
 
           const auto current_state_int {w_api.getHdrState(*path)};
           if (!current_state_int) {
+            if (state == HdrState::Disabled) {
+              // Monitor doesn't support HDR — it's already effectively in a non-HDR state.
+              // Skip gracefully instead of failing the entire display configuration.
+              DD_LOG(info) << "HDR is not supported for " << device_id << ", skipping (already non-HDR).";
+              return true;
+            }
             DD_LOG(error) << "HDR state cannot be changed for " << device_id << "!";
             return false;
           }
