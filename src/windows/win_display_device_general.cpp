@@ -221,7 +221,7 @@ namespace display_device {
     source_mode->position.x = static_cast<LONG>(origin.m_x);
     source_mode->position.y = static_cast<LONG>(origin.m_y);
 
-    const UINT32 flags {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES | SDC_VIRTUAL_MODE_AWARE};
+    const UINT32 flags {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES | SDC_SAVE_TO_DATABASE | SDC_VIRTUAL_MODE_AWARE};
     const LONG result {m_w_api->setDisplayConfig(display_data->m_paths, display_data->m_modes, flags)};
     if (result != ERROR_SUCCESS) {
       DD_LOG(error) << m_w_api->getErrorString(result) << " failed to move device " << device_id << " to new origin!";

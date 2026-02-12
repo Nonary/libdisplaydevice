@@ -100,7 +100,7 @@ namespace display_device {
     // 3) Restore display modes if needed.
     if (!state.m_modified.m_original_modes.empty()) {
       DD_LOG(info) << "Restoring original display modes.";
-      if (!m_dd_api->setDisplayModesTemporary(state.m_modified.m_original_modes)) {
+      if (!m_dd_api->setDisplayModes(state.m_modified.m_original_modes)) {
         DD_LOG(error) << "Failed to restore original display modes!";
         return RevertResult::RevertingDisplayModesFailed;
       }

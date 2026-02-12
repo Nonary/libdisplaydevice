@@ -309,7 +309,7 @@ namespace display_device {
     const auto try_change {[&](const DeviceDisplayModeMap &new_modes, const auto info_preamble, const auto error_log) {
       if (current_display_modes != new_modes) {
         DD_LOG(info) << info_preamble << toJson(new_modes);
-        if (!m_dd_api->setDisplayModesTemporary(new_modes)) {
+        if (!m_dd_api->setDisplayModes(new_modes)) {
           system_settings_touched = true;
           DD_LOG(error) << error_log;
           return false;
