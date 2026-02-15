@@ -116,12 +116,20 @@ namespace display_device {
     DeviceDisplayModeMap m_modes {}; /**< Current modes per device. */
     HdrStateMap m_hdr_states {}; /**< Current HDR state per device. */
     std::string m_primary_device {}; /**< Current primary device id (empty if unknown). */
+    std::map<std::string, Point> m_origins {}; /**< Current origin point per device. */
 
     /**
      * @brief Comparator for strict equality.
      */
     friend bool operator==(const DisplaySettingsSnapshot &lhs, const DisplaySettingsSnapshot &rhs) {
-      return lhs.m_topology == rhs.m_topology && lhs.m_modes == rhs.m_modes && lhs.m_hdr_states == rhs.m_hdr_states && lhs.m_primary_device == rhs.m_primary_device;
+      if (!(lhs.m_topology == rhs.m_topology && lhs.m_modes == rhs.m_modes && lhs.m_hdr_states == rhs.m_hdr_states && lhs.m_primary_device == rhs.m_primary_device)) {
+        return false;
+      }
+      // Origins are optional for backward compatibility with older snapshots
+      if (!lhs.m_origins.empty() && !rhs.m_origins.empty()) {
+        return lhs.m_origins == rhs.m_origins;
+      }
+      return true;
     }
   };
 
