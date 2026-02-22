@@ -631,7 +631,7 @@ namespace display_device {
       for (int tries = 0; tries < kMaxTries; ++tries) {
         UINT32 pc = static_cast<UINT32>(paths.size());
         UINT32 mc = static_cast<UINT32>(modes.size());
-        result = QueryDisplayConfig(flags, &pc, paths.data(), &mc, modes.data(), nullptr);
+        result = QueryDisplayConfig(flags, &pc, pc ? paths.data() : nullptr, &mc, mc ? modes.data() : nullptr, nullptr);
 
         if (result == ERROR_SUCCESS) {
           flush_failures();
