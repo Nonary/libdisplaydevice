@@ -28,6 +28,14 @@ namespace display_device::win_utils {
   std::set<std::string> flattenTopology(const ActiveTopology &topology);
 
   /**
+   * @brief Find topology group with matching id and get other ids from the group.
+   * @param topology Topology to be searched.
+   * @param target_device_id Device id whose group to search for.
+   * @return Other ids in the group without (excluding the provided one).
+   */
+  std::set<std::string> tryGetOtherDevicesInTheSameGroup(const ActiveTopology &topology, const std::string &target_device_id);
+
+  /**
    * @brief Create extended topology from all the available devices.
    * @param win_dd Interface for interacting with the OS.
    * @return Extended topology with all the available devices.

@@ -94,29 +94,6 @@ namespace display_device::win_utils {
     }
 
     /**
-     * @brief Find topology group with matching id and get other ids from the group.
-     * @param topology Topology to be searched.
-     * @param target_device_id Device id whose group to search for.
-     * @return Other ids in the group without (excluding the provided one).
-     */
-    std::set<std::string> tryGetOtherDevicesInTheSameGroup(const ActiveTopology &topology, const std::string &target_device_id) {
-      std::set<std::string> device_ids;
-
-      for (const auto &group : topology) {
-        for (const auto &group_device_id : group) {
-          if (group_device_id == target_device_id) {
-            std::ranges::copy_if(group, std::inserter(device_ids, std::begin(device_ids)), [&target_device_id](const auto &id) {
-              return id != target_device_id;
-            });
-            break;
-          }
-        }
-      }
-
-      return device_ids;
-    }
-
-    /**
      * @brief Merge the configurable devices into a vector.
      */
     std::vector<std::string> joinConfigurableDevices(const std::string &device_to_configure, const std::set<std::string> &additional_devices_to_configure) {
@@ -135,6 +112,23 @@ namespace display_device::win_utils {
     }
 
     return flattened_topology;
+  }
+
+  std::set<std::string> tryGetOtherDevicesInTheSameGroup(const ActiveTopology &topology, const std::string &target_device_id) {
+    std::set<std::string> device_ids;
+
+    for (const auto &group : topology) {
+      for (const auto &group_device_id : group) {
+        if (group_device_id == target_device_id) {
+          std::ranges::copy_if(group, std::inserter(device_ids, std::begin(device_ids)), [&target_device_id](const auto &id) {
+            return id != target_device_id;
+          });
+          break;
+        }
+      }
+    }
+
+    return device_ids;
   }
 
   ActiveTopology createFullExtendedTopology(WinDisplayDeviceInterface &win_dd) {

@@ -156,7 +156,7 @@ namespace display_device {
       return std::nullopt;
     }
 
-    const auto &[new_topology, device_to_configure, additional_devices_to_configure] = win_utils::computeNewTopologyAndMetadata(config.m_device_prep, config.m_device_id, *stripped_initial_state);
+    auto [new_topology, device_to_configure, additional_devices_to_configure] = win_utils::computeNewTopologyAndMetadata(config.m_device_prep, config.m_device_id, *stripped_initial_state);
     const auto change_is_needed {!m_dd_api->isTopologyTheSame(topology_before_changes, new_topology)};
     DD_LOG(info) << "Newly computed display device topology data:\n"
                  << "  - topology: " << toJson(new_topology, JSON_COMPACT) << "\n"
@@ -200,6 +200,11 @@ namespace display_device {
       }
       if (!m_dd_api->isTopologyTheSame(new_topology, applied_topology)) {
         DD_LOG(warning) << "Applied topology differs from requested topology. Using applied topology for subsequent steps.";
+        if (!win_utils::flattenTopology(applied_topology).contains(device_to_configure)) {
+          DD_LOG(error) << "Device " << toJson(device_to_configure, JSON_COMPACT) << " is not active in the applied topology!";
+          return std::nullopt;
+        }
+        additional_devices_to_configure = win_utils::tryGetOtherDevicesInTheSameGroup(applied_topology, device_to_configure);
       }
 
       // We can release the context later on if everything is successful as we are switching back to the non-stripped initial state.
@@ -329,7 +334,12 @@ namespace display_device {
 
     if (change_required) {
       const bool configuring_primary_devices {config.m_device_id.empty()};
-      const auto original_display_modes {cached_display_modes.empty() ? current_display_modes : cached_display_modes};
+      auto original_display_modes {cached_display_modes.empty() ? current_display_modes : cached_display_modes};
+      for (const auto &[device_id, mode] : current_display_modes) {
+        if (!original_display_modes.contains(device_id)) {
+          original_display_modes.emplace(device_id, mode);
+        }
+      }
       const auto new_display_modes {win_utils::computeNewDisplayModes(config.m_resolution, config.m_refresh_rate, configuring_primary_devices, device_to_configure, additional_devices_to_configure, original_display_modes)};
 
       if (!try_change(new_display_modes, "Changing display modes to:\n", "Failed to apply new configuration, because new display modes could not be set!")) {
