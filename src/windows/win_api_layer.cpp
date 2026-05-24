@@ -559,6 +559,8 @@ namespace display_device {
   }
 
   std::optional<PathAndModeData> WinApiLayer::queryDisplayConfig(QueryType type) const {
+    const bool recovery_skipped = detail::current_display_recovery_behavior() == DisplayRecoveryBehavior::Skip;
+
     auto make_flags = [&](bool virtual_mode_aware) -> UINT32 {
       UINT32 f = (type == QueryType::Active) ? QDC_ONLY_ACTIVE_PATHS : QDC_ALL_PATHS;
       if (virtual_mode_aware) {
@@ -603,7 +605,9 @@ namespace display_device {
           continue;  // try compat
         }
         DD_LOG(error) << getErrorString(result) << " failed 'to get display buffer size's!";
-        ::Sleep(QUERY_ERROR_COOLDOWN_MS);
+        if (!recovery_skipped) {
+          ::Sleep(QUERY_ERROR_COOLDOWN_MS);
+        }
         continue;
       }
 
@@ -612,6 +616,8 @@ namespace display_device {
 
       // Bounded retry with backoff if topology is changing.
       constexpr int kMaxTries = 9;
+      constexpr int kMaxTriesWithoutRecovery = 3;
+      const int max_tries = recovery_skipped ? kMaxTriesWithoutRecovery : kMaxTries;
       int aggregated_failures = 0;
       LONG last_error = ERROR_SUCCESS;
       auto flush_failures = [&]() {
@@ -625,10 +631,12 @@ namespace display_device {
       auto record_failure = [&](LONG error) {
         last_error = error;
         ++aggregated_failures;
-        ::Sleep(QUERY_ERROR_COOLDOWN_MS);
+        if (!recovery_skipped) {
+          ::Sleep(QUERY_ERROR_COOLDOWN_MS);
+        }
       };
 
-      for (int tries = 0; tries < kMaxTries; ++tries) {
+      for (int tries = 0; tries < max_tries; ++tries) {
         UINT32 pc = static_cast<UINT32>(paths.size());
         UINT32 mc = static_cast<UINT32>(modes.size());
         result = QueryDisplayConfig(flags, &pc, pc ? paths.data() : nullptr, &mc, mc ? modes.data() : nullptr, nullptr);
@@ -676,7 +684,9 @@ namespace display_device {
 
           // Backoff (exponential, clamped)
           const DWORD delay = std::min<DWORD>(500, 25u * (1u << tries));
-          ::Sleep(delay);
+          if (!recovery_skipped) {
+            ::Sleep(delay);
+          }
           continue;
         }
 
