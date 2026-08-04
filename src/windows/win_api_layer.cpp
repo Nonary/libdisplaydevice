@@ -497,31 +497,10 @@ namespace display_device {
       return output;
     }
 
-    /**
-     * @brief Check if the Windows 11 version is equal to 24H2 update or later.
-     * @param w_api Reference to the WinApiLayer.
-     * @return True if version >= W11 24H2, false otherwise.
-     */
-    bool is_W11_24H2_OrAbove(const WinApiLayerInterface &w_api) {
-      OSVERSIONINFOEXA os_version_info;
-      os_version_info.dwOSVersionInfoSize = sizeof(os_version_info);
-      os_version_info.dwMajorVersion = HIBYTE(_WIN32_WINNT_WIN10);
-      os_version_info.dwMinorVersion = LOBYTE(_WIN32_WINNT_WIN10);
-      os_version_info.dwBuildNumber = 26100;  // The earliest pre-release version is 25947, whereas the stable is 26100
-
-      ULONGLONG condition_mask {0};
-      condition_mask = VerSetConditionMask(condition_mask, VER_MAJORVERSION, VER_GREATER_EQUAL);  // Major version condition
-      condition_mask = VerSetConditionMask(condition_mask, VER_MINORVERSION, VER_GREATER_EQUAL);  // Minor version condition
-      condition_mask = VerSetConditionMask(condition_mask, VER_BUILDNUMBER, VER_GREATER_EQUAL);  // Build number condition
-
-      BOOL result {VerifyVersionInfoA(&os_version_info, VER_MAJORVERSION | VER_MINORVERSION | VER_BUILDNUMBER, condition_mask)};
-      if (result == FALSE) {
-        DD_LOG(debug) << "\"is_W11_24H2_OrAbove\" returned false.";
-        return false;
-      }
-
-      DD_LOG(debug) << "\"is_W11_24H2_OrAbove\" returned true.";
-      return true;
+    bool advancedColorV2IsUnavailable(LONG result) {
+      return result == ERROR_INVALID_FUNCTION ||
+             result == ERROR_INVALID_PARAMETER ||
+             result == ERROR_NOT_SUPPORTED;
     }
   }  // namespace
 
@@ -1027,57 +1006,57 @@ namespace display_device {
 
   std::optional<HdrState> WinApiLayer::getHdrState(const DISPLAYCONFIG_PATH_INFO &path) const {
     ApiCallTimer timer("WinApiLayer::getHdrState", pathIdentifier(path));
-    if (is_W11_24H2_OrAbove(*this)) {
-      DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 color_info = {};
-      color_info.header.adapterId = path.targetInfo.adapterId;
-      color_info.header.id = path.targetInfo.id;
-      color_info.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2;
-      color_info.header.size = sizeof(color_info);
-
-      LONG result {DisplayConfigGetDeviceInfo(&color_info.header)};
-      if (result != ERROR_SUCCESS) {
-        DD_LOG(error) << getErrorString(result) << " failed to get advanced color info 2!";
-        return std::nullopt;
-      }
-
-      return color_info.highDynamicRangeSupported ? std::make_optional(color_info.highDynamicRangeUserEnabled ? HdrState::Enabled : HdrState::Disabled) : std::nullopt;
-    }
-
-    DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO color_info = {};
+    DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 color_info = {};
     color_info.header.adapterId = path.targetInfo.adapterId;
     color_info.header.id = path.targetInfo.id;
-    color_info.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO;
+    color_info.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2;
     color_info.header.size = sizeof(color_info);
 
     LONG result {DisplayConfigGetDeviceInfo(&color_info.header)};
+    if (result == ERROR_SUCCESS) {
+      return color_info.highDynamicRangeSupported ? std::make_optional(color_info.highDynamicRangeUserEnabled ? HdrState::Enabled : HdrState::Disabled) : std::nullopt;
+    }
+    if (!advancedColorV2IsUnavailable(result)) {
+      DD_LOG(error) << getErrorString(result) << " failed to get advanced color info 2!";
+      return std::nullopt;
+    }
+    DD_LOG(debug) << getErrorString(result) << " while probing advanced color info 2; falling back to the legacy API.";
+
+    DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO legacy_color_info = {};
+    legacy_color_info.header.adapterId = path.targetInfo.adapterId;
+    legacy_color_info.header.id = path.targetInfo.id;
+    legacy_color_info.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO;
+    legacy_color_info.header.size = sizeof(legacy_color_info);
+
+    result = DisplayConfigGetDeviceInfo(&legacy_color_info.header);
     if (result != ERROR_SUCCESS) {
       DD_LOG(error) << getErrorString(result) << " failed to get advanced color info!";
       return std::nullopt;
     }
 
-    return color_info.advancedColorSupported ? std::make_optional(color_info.advancedColorEnabled ? HdrState::Enabled : HdrState::Disabled) : std::nullopt;
+    return legacy_color_info.advancedColorSupported ? std::make_optional(legacy_color_info.advancedColorEnabled ? HdrState::Enabled : HdrState::Disabled) : std::nullopt;
   }
 
   bool WinApiLayer::setHdrState(const DISPLAYCONFIG_PATH_INFO &path, HdrState state) {
     std::ostringstream detail;
     detail << pathIdentifier(path) << " state=" << hdrStateToString(state);
     ApiCallTimer timer("WinApiLayer::setHdrState", detail.str());
-    if (is_W11_24H2_OrAbove(*this)) {
-      DISPLAYCONFIG_SET_HDR_STATE hdr_state = {};
-      hdr_state.header.adapterId = path.targetInfo.adapterId;
-      hdr_state.header.id = path.targetInfo.id;
-      hdr_state.header.type = DISPLAYCONFIG_DEVICE_INFO_TYPE(16);
-      hdr_state.header.size = sizeof(hdr_state);
-      hdr_state.enableHdr = state == HdrState::Enabled ? 1 : 0;
+    DISPLAYCONFIG_SET_HDR_STATE hdr_state = {};
+    hdr_state.header.adapterId = path.targetInfo.adapterId;
+    hdr_state.header.id = path.targetInfo.id;
+    hdr_state.header.type = DISPLAYCONFIG_DEVICE_INFO_TYPE(16);
+    hdr_state.header.size = sizeof(hdr_state);
+    hdr_state.enableHdr = state == HdrState::Enabled ? 1 : 0;
 
-      LONG result {DisplayConfigSetDeviceInfo(&hdr_state.header)};
-      if (result != ERROR_SUCCESS) {
-        DD_LOG(error) << getErrorString(result) << " failed to set HDR state!";
-        return false;
-      }
-
+    LONG result {DisplayConfigSetDeviceInfo(&hdr_state.header)};
+    if (result == ERROR_SUCCESS) {
       return true;
     }
+    if (!advancedColorV2IsUnavailable(result)) {
+      DD_LOG(error) << getErrorString(result) << " failed to set HDR state!";
+      return false;
+    }
+    DD_LOG(debug) << getErrorString(result) << " while setting HDR state; falling back to the legacy Advanced Color API.";
 
     DISPLAYCONFIG_SET_ADVANCED_COLOR_STATE color_state = {};
     color_state.header.adapterId = path.targetInfo.adapterId;
@@ -1086,7 +1065,7 @@ namespace display_device {
     color_state.header.size = sizeof(color_state);
     color_state.enableAdvancedColor = state == HdrState::Enabled ? 1 : 0;
 
-    LONG result {DisplayConfigSetDeviceInfo(&color_state.header)};
+    result = DisplayConfigSetDeviceInfo(&color_state.header);
     if (result != ERROR_SUCCESS) {
       DD_LOG(error) << getErrorString(result) << " failed to set advanced color info!";
       return false;
