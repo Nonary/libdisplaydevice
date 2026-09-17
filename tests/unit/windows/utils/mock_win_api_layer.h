@@ -22,6 +22,11 @@ namespace display_device {
     MOCK_METHOD(std::optional<Rational>, getDisplayScale, (const std::string &, const DISPLAYCONFIG_SOURCE_MODE &), (const, override));
     MOCK_METHOD(std::optional<Resolution>, getPreferredResolution, (const DISPLAYCONFIG_PATH_INFO &), (const, override));
     MOCK_METHOD(std::vector<DisplayMode>, getSupportedDisplayModes, (const DISPLAYCONFIG_PATH_INFO &), (const, override));
+    bool probeGdiDisplayMode(const DISPLAYCONFIG_PATH_INFO &, const DisplayMode &) const override {
+      return false;
+    }
+    void recoverDisplayStack() override {
+    }
   };
 }  // namespace display_device
 

@@ -211,10 +211,29 @@ namespace display_device {
      * referenced by the provided path. The returned list can include duplicate entries
      * and modes with different refresh rates for the same resolution.
      *
+     * The default implementation queries DXGI first. A full GDI mode walk is only used
+     * when DXGI returns no modes, and even then it is time-budgeted. DXGI can omit
+     * dynamically advertised custom modes; callers that have a specific requested mode
+     * should follow up with @see probeGdiDisplayMode rather than enumerating GDI.
+     *
      * @param path Target path to enumerate modes for.
      * @returns A list of supported modes; empty if enumeration failed.
      */
     [[nodiscard]] virtual std::vector<DisplayMode> getSupportedDisplayModes(const DISPLAYCONFIG_PATH_INFO &path) const = 0;
+
+    /**
+     * @brief Probe whether GDI will accept a specific mode without walking the full mode list.
+     *
+     * `EnumDisplaySettingsEx` is called once per mode index and is extremely slow on some
+     * virtual display drivers (seconds for a complete walk). This instead takes the current
+     * DEVMODE and asks `ChangeDisplaySettingsEx(CDS_TEST)` whether the requested
+     * width/height/refresh can be applied. That is a handful of kernel calls, not hundreds.
+     *
+     * @param path Target path whose GDI display name is used for the probe.
+     * @param mode Mode to test.
+     * @returns True if CDS_TEST reports the mode as valid.
+     */
+    [[nodiscard]] virtual bool probeGdiDisplayMode(const DISPLAYCONFIG_PATH_INFO &path, const DisplayMode &mode) const = 0;
 
     /**
      * @brief Attempt a best-effort display stack recovery.

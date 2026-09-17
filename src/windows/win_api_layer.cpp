@@ -497,6 +497,40 @@ namespace display_device {
       return output;
     }
 
+    /**
+     * @brief Converts a UTF-8 string into a UTF-16 wide string.
+     * @param w_api Reference to the WinApiLayer.
+     * @param value The UTF-8 string.
+     * @return The converted UTF-16 string.
+     */
+    std::wstring toWide(const WinApiLayerInterface &w_api, const std::string &value) {
+      if (value.empty()) {
+        return {};
+      }
+
+      auto output_size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(), static_cast<int>(value.size()), nullptr, 0);
+      if (output_size == 0) {
+        DD_LOG(error) << w_api.getErrorString(static_cast<LONG>(GetLastError())) << " failed to get UTF-16 buffer size.";
+        return {};
+      }
+
+      std::wstring output(static_cast<std::size_t>(output_size), L'\0');
+      output_size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, value.data(), static_cast<int>(value.size()), output.data(), static_cast<int>(output.size()));
+      if (output_size == 0) {
+        DD_LOG(error) << w_api.getErrorString(static_cast<LONG>(GetLastError())) << " failed to convert string to UTF-16.";
+        return {};
+      }
+
+      return output;
+    }
+
+    unsigned int refreshToHz(const Rational &refresh) {
+      if (refresh.m_denominator == 0) {
+        return 0;
+      }
+      return static_cast<unsigned int>((static_cast<unsigned long long>(refresh.m_numerator) + (refresh.m_denominator / 2)) / refresh.m_denominator);
+    }
+
     bool advancedColorV2IsUnavailable(LONG result) {
       return result == ERROR_INVALID_FUNCTION ||
              result == ERROR_INVALID_PARAMETER ||
@@ -1312,10 +1346,30 @@ namespace display_device {
         }
       };
 
-      for (DWORD i = 0;; ++i) {
-        DEVMODEA dm {};
+      // Walking every GDI index hits the driver once per mode. Virtual displays can
+      // advertise hundreds of entries, which previously stalled for seconds. This
+      // path is only a DXGI-empty fallback, and it is hard-capped in both time and
+      // count so a chatty driver cannot stall session setup.
+      const auto wide_name = toWide(*this, display_name);
+      if (wide_name.empty()) {
+        return result;
+      }
+
+      constexpr auto kBudget = std::chrono::milliseconds(75);
+      constexpr DWORD kMaxModes = 64;
+      const auto deadline = std::chrono::steady_clock::now() + kBudget;
+      const auto started = std::chrono::steady_clock::now();
+
+      for (DWORD i = 0; i < kMaxModes; ++i) {
+        if (std::chrono::steady_clock::now() >= deadline) {
+          DD_LOG(warning) << "GDI display mode enumeration for " << display_name
+                          << " stopped after " << i << " entries to avoid a long stall.";
+          break;
+        }
+
+        DEVMODEW dm {};
         dm.dmSize = sizeof(dm);
-        if (EnumDisplaySettingsExA(display_name.c_str(), i, &dm, 0) != TRUE) {
+        if (EnumDisplaySettingsExW(wide_name.c_str(), i, &dm, 0) != TRUE) {
           break;
         }
 
@@ -1333,9 +1387,16 @@ namespace display_device {
         add_mode(width, height, frequency);
       }
 
+      const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started);
+      DD_LOG(debug) << "GDI fallback enumerated " << result.size() << " display mode(s) for "
+                    << display_name << " in " << elapsed.count() << " ms.";
       return result;
     };
 
+    // DXGI is the fast path and is treated as the mode list whenever it returns
+    // anything. A nonempty DXGI list can still omit a dynamically advertised custom
+    // mode; callers with a specific request should use probeGdiDisplayMode instead
+    // of walking GDI here.
     std::vector<DisplayMode> supported = enumerate_via_dxgi();
     if (supported.empty()) {
       supported = enumerate_via_gdi();
@@ -1343,6 +1404,59 @@ namespace display_device {
 
     storeDisplayModesInCache(display_name, supported);
     return supported;
+  }
+
+  bool WinApiLayer::probeGdiDisplayMode(const DISPLAYCONFIG_PATH_INFO &path, const DisplayMode &mode) const {
+    std::ostringstream detail;
+    detail << pathIdentifier(path)
+           << " " << mode.m_resolution.m_width << "x" << mode.m_resolution.m_height
+           << " @ " << mode.m_refresh_rate.m_numerator << "/" << mode.m_refresh_rate.m_denominator;
+    ApiCallTimer timer("WinApiLayer::probeGdiDisplayMode", detail.str());
+
+    if (mode.m_resolution.m_width == 0 || mode.m_resolution.m_height == 0) {
+      return false;
+    }
+
+    const std::string display_name = getDisplayName(path);
+    if (display_name.empty()) {
+      DD_LOG(debug) << "Display name is empty; cannot probe GDI mode.";
+      return false;
+    }
+
+    const auto wide_name = toWide(*this, display_name);
+    if (wide_name.empty()) {
+      return false;
+    }
+
+    DEVMODEW dm {};
+    dm.dmSize = sizeof(dm);
+    if (EnumDisplaySettingsExW(wide_name.c_str(), ENUM_CURRENT_SETTINGS, &dm, 0) != TRUE) {
+      dm = {};
+      dm.dmSize = sizeof(dm);
+      dm.dmBitsPerPel = 32;
+    }
+
+    dm.dmPelsWidth = mode.m_resolution.m_width;
+    dm.dmPelsHeight = mode.m_resolution.m_height;
+    dm.dmFields |= DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL;
+    if (dm.dmBitsPerPel == 0) {
+      dm.dmBitsPerPel = 32;
+    }
+
+    const unsigned int hz = refreshToHz(mode.m_refresh_rate);
+    if (hz > 1) {
+      dm.dmDisplayFrequency = hz;
+      dm.dmFields |= DM_DISPLAYFREQUENCY;
+    }
+
+    const LONG result = ChangeDisplaySettingsExW(wide_name.c_str(), &dm, nullptr, CDS_TEST, nullptr);
+    if (result == DISP_CHANGE_SUCCESSFUL) {
+      return true;
+    }
+
+    DD_LOG(debug) << "GDI CDS_TEST rejected " << mode.m_resolution.m_width << "x" << mode.m_resolution.m_height
+                  << " @ " << hz << "Hz for " << display_name << " (result=" << result << ").";
+    return false;
   }
 
   std::optional<Rational> WinApiLayer::getDisplayScale(const std::string &display_name, const DISPLAYCONFIG_SOURCE_MODE &source_mode) const {

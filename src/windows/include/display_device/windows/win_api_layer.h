@@ -56,6 +56,9 @@ namespace display_device {
     /** For details @see WinApiLayerInterface::getSupportedDisplayModes */
     [[nodiscard]] std::vector<DisplayMode> getSupportedDisplayModes(const DISPLAYCONFIG_PATH_INFO &path) const override;
 
+    /** For details @see WinApiLayerInterface::probeGdiDisplayMode */
+    [[nodiscard]] bool probeGdiDisplayMode(const DISPLAYCONFIG_PATH_INFO &path, const DisplayMode &mode) const override;
+
     /** For details @see WinApiLayerInterface::recoverDisplayStack */
     void recoverDisplayStack() override;
 

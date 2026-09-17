@@ -5,12 +5,9 @@
 // class header include
 #include "display_device/windows/win_display_device.h"
 
-// system includes
-#include <algorithm>
-#include <limits>
-
 // local includes
 #include "display_device/logging.h"
+#include "display_device/windows/display_mode_resolution.h"
 #include "display_device/windows/win_api_utils.h"
 
 namespace display_device {
@@ -105,93 +102,6 @@ namespace display_device {
       return true;
     }
 
-    bool sameAspect(const Resolution &a, const Resolution &b) {
-      const long long lhs = static_cast<long long>(a.m_width) * static_cast<long long>(b.m_height);
-      const long long rhs = static_cast<long long>(b.m_width) * static_cast<long long>(a.m_height);
-      return lhs == rhs;
-    }
-
-    double refreshToDouble(const Rational &r) {
-      if (r.m_denominator == 0) {
-        return 0.0;
-      }
-      return static_cast<double>(r.m_numerator) / static_cast<double>(r.m_denominator);
-    }
-
-    bool refreshRatesEqual(const Rational &lhs, const Rational &rhs) {
-      if (lhs.m_denominator <= 0 || rhs.m_denominator <= 0) {
-        return false;
-      }
-      const auto lhs_scaled = static_cast<long long>(lhs.m_numerator) * static_cast<long long>(rhs.m_denominator);
-      const auto rhs_scaled = static_cast<long long>(rhs.m_numerator) * static_cast<long long>(lhs.m_denominator);
-      return lhs_scaled == rhs_scaled;
-    }
-
-    std::optional<DisplayMode> pickClosestMode(const DisplayMode &requested_mode, const std::vector<DisplayMode> &candidates, bool require_same_aspect) {
-      if (candidates.empty()) {
-        return std::nullopt;
-      }
-
-      const auto req_area = static_cast<long long>(requested_mode.m_resolution.m_width) * static_cast<long long>(requested_mode.m_resolution.m_height);
-      const double req_hz = refreshToDouble(requested_mode.m_refresh_rate);
-
-      std::optional<DisplayMode> best;
-      auto best_area_delta = std::numeric_limits<long long>::max();
-      double best_refresh_delta = std::numeric_limits<double>::infinity();
-
-      for (const auto &candidate : candidates) {
-        if (require_same_aspect && !sameAspect(candidate.m_resolution, requested_mode.m_resolution)) {
-          continue;
-        }
-
-        const auto area = static_cast<long long>(candidate.m_resolution.m_width) * static_cast<long long>(candidate.m_resolution.m_height);
-        const auto area_delta = std::llabs(area - req_area);
-        const double cand_hz = refreshToDouble(candidate.m_refresh_rate);
-        const double hz_delta = std::abs(cand_hz - req_hz);
-
-        if (!best || area_delta < best_area_delta || (area_delta == best_area_delta && hz_delta < best_refresh_delta)) {
-          best = candidate;
-          best_area_delta = area_delta;
-          best_refresh_delta = hz_delta;
-        }
-      }
-
-      return best;
-    }
-
-    std::optional<DisplayMode> pickPreferredResolutionMode(const DisplayMode &requested_mode, const std::vector<DisplayMode> &candidates, const std::optional<Resolution> &preferred_resolution) {
-      if (!preferred_resolution) {
-        return std::nullopt;
-      }
-
-      if (!sameAspect(*preferred_resolution, requested_mode.m_resolution)) {
-        return std::nullopt;
-      }
-
-      std::optional<DisplayMode> best;
-      double best_refresh_delta = std::numeric_limits<double>::infinity();
-      const double req_hz = refreshToDouble(requested_mode.m_refresh_rate);
-
-      for (const auto &candidate : candidates) {
-        if (candidate.m_resolution.m_width != preferred_resolution->m_width || candidate.m_resolution.m_height != preferred_resolution->m_height) {
-          continue;
-        }
-
-        const double cand_hz = refreshToDouble(candidate.m_refresh_rate);
-        const double hz_delta = std::abs(cand_hz - req_hz);
-        if (!best || hz_delta < best_refresh_delta) {
-          best = candidate;
-          best_refresh_delta = hz_delta;
-        }
-      }
-
-      if (best) {
-        return best;
-      }
-
-      return DisplayMode {*preferred_resolution, requested_mode.m_refresh_rate};
-    }
-
     struct ResolvedModes {
       DeviceDisplayModeMap resolved;
       bool requires_apply {false};
@@ -227,40 +137,27 @@ namespace display_device {
         }
 
         auto supported {w_api.getSupportedDisplayModes(*path)};
-        const auto preferred_resolution {w_api.getPreferredResolution(*path)};
-
-        std::optional<DisplayMode> exact_supported_mode;
-        for (const auto &candidate : supported) {
-          if (candidate.m_resolution.m_width == requested_mode.m_resolution.m_width &&
-              candidate.m_resolution.m_height == requested_mode.m_resolution.m_height &&
-              refreshRatesEqual(candidate.m_refresh_rate, requested_mode.m_refresh_rate)) {
-            exact_supported_mode = candidate;
-            break;
+        if (!win_utils::supportedModesContainResolution(supported, requested_mode.m_resolution)) {
+          // DXGI can omit a dynamically advertised custom mode. Probe that one mode
+          // via GDI instead of walking the entire GDI list (which is seconds-slow
+          // on some virtual display drivers).
+          if (w_api.probeGdiDisplayMode(*path, requested_mode)) {
+            DD_LOG(debug) << "GDI accepted requested mode "
+                          << requested_mode.m_resolution.m_width << "x" << requested_mode.m_resolution.m_height
+                          << " that DXGI omitted for device " << device_id << ".";
+            supported = win_utils::mergeDisplayModes(supported, {requested_mode});
           }
         }
 
-        DisplayMode final_mode {requested_mode};
-        if (exact_supported_mode) {
-          final_mode = *exact_supported_mode;
-        } else {
-          auto chosen = pickClosestMode(requested_mode, supported, true);
-          if (!chosen) {
-            chosen = pickPreferredResolutionMode(requested_mode, supported, preferred_resolution);
-          }
-          if (!chosen) {
-            chosen = pickClosestMode(requested_mode, supported, false);
-          }
+        const auto preferred_resolution {w_api.getPreferredResolution(*path)};
+        const DisplayMode final_mode {win_utils::resolveRequestedDisplayMode(requested_mode, supported, preferred_resolution)};
 
-          if (chosen) {
-            final_mode = *chosen;
-            if (!win_utils::fuzzyCompareModes(final_mode, requested_mode)) {
-              DD_LOG(info) << "Resolved display mode for device " << device_id << " adjusted to: "
-                           << final_mode.m_resolution.m_width << "x" << final_mode.m_resolution.m_height << " @ "
-                           << final_mode.m_refresh_rate.m_numerator << "/" << final_mode.m_refresh_rate.m_denominator;
-            }
-          } else {
-            DD_LOG(warning) << "No supported fallback modes for device " << device_id << ". Using requested mode.";
-          }
+        if (!win_utils::fuzzyCompareModes(final_mode, requested_mode)) {
+          DD_LOG(info) << "Resolved display mode for device " << device_id << " adjusted to: "
+                       << final_mode.m_resolution.m_width << "x" << final_mode.m_resolution.m_height << " @ "
+                       << final_mode.m_refresh_rate.m_numerator << "/" << final_mode.m_refresh_rate.m_denominator;
+        } else if (supported.empty()) {
+          DD_LOG(warning) << "No supported fallback modes for device " << device_id << ". Using requested mode.";
         }
 
         const bool matches_current = current_it != std::end(current_modes) && win_utils::fuzzyCompareModes(current_it->second, final_mode);
