@@ -33,7 +33,9 @@ namespace display_device {
         return false;
       }
 
-      UINT32 flags {SDC_APPLY | SDC_TOPOLOGY_SUPPLIED | SDC_ALLOW_PATH_ORDER_CHANGES | SDC_SAVE_TO_DATABASE | SDC_VIRTUAL_MODE_AWARE};
+      // No SDC_SAVE_TO_DATABASE here: it is only valid with SDC_USE_SUPPLIED_DISPLAY_CONFIG, so Windows rejects
+      // the call with ERROR_INVALID_PARAMETER. The modes for this topology come from the database anyway.
+      UINT32 flags {SDC_APPLY | SDC_TOPOLOGY_SUPPLIED | SDC_ALLOW_PATH_ORDER_CHANGES | SDC_VIRTUAL_MODE_AWARE};
       LONG result {w_api.setDisplayConfig(paths, {}, flags)};
       if (result == ERROR_GEN_FAILURE) {
         DD_LOG(warning) << w_api.getErrorString(result) << " failed to change topology using the topology from Windows DB! Asking Windows to create the topology.";
@@ -47,7 +49,10 @@ namespace display_device {
           return false;
         }
 
-        flags = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES /* This flag is probably not needed, but who knows really... (not MSDOCS at least) */ | SDC_SAVE_TO_DATABASE | SDC_VIRTUAL_MODE_AWARE;
+        // These paths have no mode indexes and no mode array, so Windows chooses best modes
+        // for this temporary topology. Do not persist that transient choice; settings code
+        // applies the requested display modes separately.
+        flags = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES /* This flag is probably not needed, but who knows really... (not MSDOCS at least) */ | SDC_VIRTUAL_MODE_AWARE;
         result = w_api.setDisplayConfig(full_paths, {}, flags);
         if (result != ERROR_SUCCESS) {
           DD_LOG(error) << w_api.getErrorString(result) << " failed to create new topology configuration!";
@@ -62,7 +67,10 @@ namespace display_device {
           return false;
         }
 
-        flags = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES /* This flag is probably not needed, but who knows really... (not MSDOCS at least) */ | SDC_SAVE_TO_DATABASE | SDC_VIRTUAL_MODE_AWARE;
+        // These paths have no mode indexes and no mode array, so Windows chooses best modes
+        // for this temporary topology. Do not persist that transient choice; settings code
+        // applies the requested display modes separately.
+        flags = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES /* This flag is probably not needed, but who knows really... (not MSDOCS at least) */ | SDC_VIRTUAL_MODE_AWARE;
         result = w_api.setDisplayConfig(full_paths, {}, flags);
         if (result != ERROR_SUCCESS) {
           DD_LOG(error) << w_api.getErrorString(result) << " failed to create new topology configuration with supplied config!";

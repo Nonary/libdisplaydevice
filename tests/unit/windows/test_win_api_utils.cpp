@@ -930,3 +930,9 @@ TEST_F_S_MOCKED(FuzzyCompareModes) {
   EXPECT_EQ(display_device::win_utils::fuzzyCompareModes(display_device::DisplayMode {1920, 123, {60, 1}}, display_device::DisplayMode {1920, 1080, {60, 1}}), false);
   EXPECT_EQ(display_device::win_utils::fuzzyCompareModes(display_device::DisplayMode {1920, 1080, {60, 1}}, display_device::DisplayMode {1920, 1080, {50, 1}}), false);
 }
+
+TEST_F_S_MOCKED(MakeValidateFlags) {
+  EXPECT_EQ(display_device::win_utils::makeValidateFlags(SDC_APPLY | SDC_TOPOLOGY_SUPPLIED | SDC_ALLOW_PATH_ORDER_CHANGES | SDC_VIRTUAL_MODE_AWARE), static_cast<UINT32>(SDC_VALIDATE | SDC_TOPOLOGY_SUPPLIED | SDC_ALLOW_PATH_ORDER_CHANGES | SDC_VIRTUAL_MODE_AWARE));
+  EXPECT_EQ(display_device::win_utils::makeValidateFlags(SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_FORCE_MODE_ENUMERATION | SDC_VIRTUAL_MODE_AWARE), static_cast<UINT32>(SDC_VALIDATE | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_VIRTUAL_MODE_AWARE));
+  EXPECT_EQ(display_device::win_utils::makeValidateFlags(SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES | SDC_SAVE_TO_DATABASE | SDC_NO_OPTIMIZATION), static_cast<UINT32>(SDC_VALIDATE | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES));
+}

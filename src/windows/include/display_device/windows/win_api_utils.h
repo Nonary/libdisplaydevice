@@ -318,4 +318,19 @@ namespace display_device::win_utils {
    * @examples_end
    */
   [[nodiscard]] bool fuzzyCompareModes(const DisplayMode &lhs, const DisplayMode &rhs);
+
+  /**
+   * @brief Make the SDC_VALIDATE counterpart of SetDisplayConfig flags meant for SDC_APPLY.
+   *
+   * Apply-only modifiers are removed to avoid ERROR_INVALID_PARAMETER during validation.
+   * SDC_SAVE_TO_DATABASE is also removed because validation does not apply changes to save.
+   *
+   * @param apply_flags Flags that would be used to apply the configuration.
+   * @return Flags to use when validating the same configuration.
+   * @examples
+   * const UINT32 flags = makeValidateFlags(SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_FORCE_MODE_ENUMERATION);
+   * // flags == SDC_VALIDATE | SDC_USE_SUPPLIED_DISPLAY_CONFIG
+   * @examples_end
+   */
+  [[nodiscard]] UINT32 makeValidateFlags(UINT32 apply_flags);
 }  // namespace display_device::win_utils

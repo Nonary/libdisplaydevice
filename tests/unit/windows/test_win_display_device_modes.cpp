@@ -109,6 +109,7 @@ namespace {
   // Additional convenience global const(s)
   const UINT32 RELAXED_FLAGS {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE | SDC_VIRTUAL_MODE_AWARE | SDC_ALLOW_CHANGES};
   const UINT32 STRICT_FLAGS {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE | SDC_VIRTUAL_MODE_AWARE};
+  const UINT32 STRICT_TEMPORARY_FLAGS {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_VIRTUAL_MODE_AWARE};
   const UINT32 UNDO_FLAGS {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE | SDC_VIRTUAL_MODE_AWARE};
 
   // Helper functions
@@ -419,6 +420,142 @@ TEST_F_S_MOCKED(SetDisplayModes, NoChanges) {
   setupExpectedGetCurrentDisplayModesCall(sequence, ut_consts::PAM_4_ACTIVE_WITH_2_DUPLICATES);
 
   EXPECT_TRUE(m_win_dd.setDisplayModes(new_modes));
+}
+
+TEST_F_S_MOCKED(SetDisplayModesExactTemporary, AppliesExactRequestedRateWithoutPersistence) {
+  const display_device::DeviceDisplayModeMap requested_modes {
+    {"DeviceId1", {1920, 1080, {120, 1}}},
+    {"DeviceId2", {1920, 2160, {119995, 1000}}},
+    {"DeviceId3", {1920, 2160, {120, 1}}},
+    {"DeviceId4", {3840, 2160, {90, 1}}},
+  };
+  const auto pam_initial {ut_consts::PAM_4_ACTIVE_WITH_2_DUPLICATES};
+  const auto pam_submitted {applyExpectedModesOntoInput(pam_initial, requested_modes)};
+
+  InSequence sequence;
+  setupExpectedGetAllDeviceIdsCall(sequence);
+  setupExpectedGetCurrentDisplayModesCall(sequence, pam_initial);
+
+  EXPECT_CALL(*m_layer, queryDisplayConfig(display_device::QueryType::Active))
+    .Times(1)
+    .WillOnce(Return(pam_initial))
+    .RetiresOnSaturation();
+  setupExpectedGetActivePathCall(1, sequence);
+  setupExpectedGetActivePathCall(2, sequence);
+  setupExpectedGetActivePathCall(3, sequence);
+  setupExpectedGetActivePathCall(4, sequence);
+  EXPECT_CALL(*m_layer, setDisplayConfig(pam_submitted->m_paths, pam_submitted->m_modes, STRICT_TEMPORARY_FLAGS))
+    .Times(1)
+    .WillOnce(Return(ERROR_SUCCESS))
+    .RetiresOnSaturation();
+  setupExpectedGetCurrentDisplayModesCall(sequence, pam_submitted);
+
+  EXPECT_TRUE(m_win_dd.setDisplayModesExactTemporary(requested_modes));
+}
+
+TEST_F_S_MOCKED(SetDisplayModesExactTemporary, ReturnsFalseWhenReadbackDoesNotMatch) {
+  const display_device::DeviceDisplayModeMap requested_modes {
+    {"DeviceId1", {1920, 1080, {120, 1}}},
+    {"DeviceId2", {1920, 2160, {119995, 1000}}},
+    {"DeviceId3", {1920, 2160, {120, 1}}},
+    {"DeviceId4", {3840, 2160, {90, 1}}},
+  };
+  const auto pam_initial {ut_consts::PAM_4_ACTIVE_WITH_2_DUPLICATES};
+  const auto pam_submitted {applyExpectedModesOntoInput(pam_initial, requested_modes)};
+
+  InSequence sequence;
+  setupExpectedGetAllDeviceIdsCall(sequence);
+  setupExpectedGetCurrentDisplayModesCall(sequence, pam_initial);
+
+  EXPECT_CALL(*m_layer, queryDisplayConfig(display_device::QueryType::Active))
+    .Times(1)
+    .WillOnce(Return(pam_initial))
+    .RetiresOnSaturation();
+  setupExpectedGetActivePathCall(1, sequence);
+  setupExpectedGetActivePathCall(2, sequence);
+  setupExpectedGetActivePathCall(3, sequence);
+  setupExpectedGetActivePathCall(4, sequence);
+  EXPECT_CALL(*m_layer, setDisplayConfig(pam_submitted->m_paths, pam_submitted->m_modes, STRICT_TEMPORARY_FLAGS))
+    .Times(1)
+    .WillOnce(Return(ERROR_SUCCESS))
+    .RetiresOnSaturation();
+  setupExpectedGetCurrentDisplayModesCall(sequence, pam_initial);
+
+  EXPECT_FALSE(m_win_dd.setDisplayModesExactTemporary(requested_modes));
+}
+
+TEST_F_S_MOCKED(SetDisplayModesExactTemporary, EquivalentRatesDoNotWriteConfiguration) {
+  const display_device::DeviceDisplayModeMap requested_modes {
+    {"DeviceId1", {1920, 1080, {120, 1}}},
+    {"DeviceId2", {1920, 2160, {119995, 1000}}},
+    {"DeviceId3", {1920, 2160, {120, 2}}},
+    {"DeviceId4", {3840, 2160, {90, 1}}},
+  };
+
+  InSequence sequence;
+  setupExpectedGetAllDeviceIdsCall(sequence);
+  setupExpectedGetCurrentDisplayModesCall(sequence, ut_consts::PAM_4_ACTIVE_WITH_2_DUPLICATES);
+
+  EXPECT_TRUE(m_win_dd.setDisplayModesExactTemporary(requested_modes));
+}
+
+TEST_F_S_MOCKED(SetDisplayModesExactTemporary, InvalidRefreshRateFailsBeforeAnyApiCall) {
+  const display_device::DeviceDisplayModeMap invalid_modes {
+    {"DeviceId1", {1920, 1080, {120, 0}}},
+  };
+
+  EXPECT_FALSE(m_win_dd.setDisplayModesExactTemporary(invalid_modes));
+}
+
+TEST_F_S_MOCKED(SetDisplayModesExactTemporary, ZeroRefreshRateNumeratorFailsBeforeAnyApiCall) {
+  const display_device::DeviceDisplayModeMap invalid_modes {
+    {"DeviceId1", {1920, 1080, {0, 1}}},
+  };
+
+  EXPECT_FALSE(m_win_dd.setDisplayModesExactTemporary(invalid_modes));
+}
+
+TEST_F_S_MOCKED(SetDisplayModesExactTemporary, MissingDeviceFailsWithoutApplying) {
+  EXPECT_CALL(*m_layer, queryDisplayConfig(display_device::QueryType::Active))
+    .Times(1)
+    .WillOnce(Return(ut_consts::PAM_NULL))
+    .RetiresOnSaturation();
+
+  EXPECT_FALSE(m_win_dd.setDisplayModesExactTemporary({{"DeviceId1", {1920, 1080, {120, 1}}}}));
+}
+
+TEST_F_S_MOCKED(SetDisplayModesExactTemporary, ApplyFailureReturnsFalseWithoutDatabaseRollback) {
+  const display_device::DeviceDisplayModeMap requested_modes {
+    {"DeviceId1", {1920, 1080, {120, 1}}},
+    {"DeviceId2", {1920, 2160, {119995, 1000}}},
+    {"DeviceId3", {1920, 2160, {120, 1}}},
+    {"DeviceId4", {3840, 2160, {90, 1}}},
+  };
+  const auto pam_initial {ut_consts::PAM_4_ACTIVE_WITH_2_DUPLICATES};
+  const auto pam_submitted {applyExpectedModesOntoInput(pam_initial, requested_modes)};
+
+  InSequence sequence;
+  setupExpectedGetAllDeviceIdsCall(sequence);
+  setupExpectedGetCurrentDisplayModesCall(sequence, pam_initial);
+
+  EXPECT_CALL(*m_layer, queryDisplayConfig(display_device::QueryType::Active))
+    .Times(1)
+    .WillOnce(Return(pam_initial))
+    .RetiresOnSaturation();
+  setupExpectedGetActivePathCall(1, sequence);
+  setupExpectedGetActivePathCall(2, sequence);
+  setupExpectedGetActivePathCall(3, sequence);
+  setupExpectedGetActivePathCall(4, sequence);
+  EXPECT_CALL(*m_layer, setDisplayConfig(pam_submitted->m_paths, pam_submitted->m_modes, STRICT_TEMPORARY_FLAGS))
+    .Times(1)
+    .WillOnce(Return(ERROR_ACCESS_DENIED))
+    .RetiresOnSaturation();
+  EXPECT_CALL(*m_layer, getErrorString(ERROR_ACCESS_DENIED))
+    .Times(1)
+    .WillOnce(Return("ErrorDesc"))
+    .RetiresOnSaturation();
+
+  EXPECT_FALSE(m_win_dd.setDisplayModesExactTemporary(requested_modes));
 }
 
 TEST_F_S_MOCKED(SetDisplayModes, EmptyModeMap) {

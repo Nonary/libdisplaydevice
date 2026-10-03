@@ -581,4 +581,11 @@ namespace display_device::win_utils {
            lhs.m_resolution.m_height == rhs.m_resolution.m_height &&
            fuzzyCompareRefreshRates(lhs.m_refresh_rate, rhs.m_refresh_rate);
   }
+
+  UINT32 makeValidateFlags(const UINT32 apply_flags) {
+    // SDC_NO_OPTIMIZATION and SDC_FORCE_MODE_ENUMERATION are documented as valid only with SDC_APPLY,
+    // and there is nothing to save to the database while validating.
+    constexpr UINT32 apply_only_flags {SDC_APPLY | SDC_NO_OPTIMIZATION | SDC_FORCE_MODE_ENUMERATION | SDC_SAVE_TO_DATABASE};
+    return (apply_flags & ~apply_only_flags) | SDC_VALIDATE;
+  }
 }  // namespace display_device::win_utils

@@ -5,6 +5,7 @@
 // class header include
 #include "display_device/windows/win_api_layer.h"
 #include "display_device/windows/win_api_recovery.h"
+#include "display_device/windows/win_api_utils.h"
 
 // system includes
 #include <boost/algorithm/string.hpp>
@@ -594,10 +595,18 @@ namespace display_device {
         mix(static_cast<std::size_t>(p.sourceInfo.id));
         mix(static_cast<std::size_t>(p.targetInfo.id));
         mix(static_cast<std::size_t>(p.flags));
+        mix(static_cast<std::size_t>(p.targetInfo.refreshRate.Numerator));
+        mix(static_cast<std::size_t>(p.targetInfo.refreshRate.Denominator));
       }
       for (const auto &m : modes) {
         mix(static_cast<std::size_t>(m.id));
         mix(static_cast<std::size_t>(m.infoType));
+        if (m.infoType == DISPLAYCONFIG_MODE_INFO_TYPE_TARGET) {
+          const auto &signal = m.targetMode.targetVideoSignalInfo;
+          mix(static_cast<std::size_t>(signal.vSyncFreq.Numerator));
+          mix(static_cast<std::size_t>(signal.vSyncFreq.Denominator));
+          mix(static_cast<std::size_t>(signal.pixelRate));
+        }
       }
       return h;
     };
@@ -896,7 +905,7 @@ namespace display_device {
     const auto validateAndCallWithFlags = [&](const std::vector<DISPLAYCONFIG_PATH_INFO> &p, const std::vector<DISPLAYCONFIG_MODE_INFO> &m, UINT32 f, const char *reason) -> LONG {
       if ((f & SDC_APPLY) != 0) {
         const std::string validate_reason = std::string {reason} + " validation";
-        const UINT32 validate_flags = (f & ~SDC_APPLY) | SDC_VALIDATE;
+        const UINT32 validate_flags = win_utils::makeValidateFlags(f);
         const LONG validate_result = callWithFlags(p, m, validate_flags, validate_reason.c_str());
         if (validate_result != ERROR_SUCCESS) {
           return validate_result;
@@ -1023,7 +1032,7 @@ namespace display_device {
       auto validateAndCallWithFlags = [&](const std::vector<DISPLAYCONFIG_PATH_INFO> &p, const std::vector<DISPLAYCONFIG_MODE_INFO> &m, UINT32 f, const char *reason) -> LONG {
         if ((f & SDC_APPLY) != 0) {
           const std::string validate_reason = std::string {reason} + " validation";
-          const UINT32 validate_flags = (f & ~SDC_APPLY) | SDC_VALIDATE;
+          const UINT32 validate_flags = win_utils::makeValidateFlags(f);
           const LONG validate_result = callWithFlags(p, m, validate_flags, validate_reason.c_str());
           if (validate_result != ERROR_SUCCESS) {
             return validate_result;

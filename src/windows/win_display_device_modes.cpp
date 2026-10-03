@@ -7,6 +7,7 @@
 
 // local includes
 #include "display_device/logging.h"
+#include "display_device/mode_verification.h"
 #include "display_device/windows/display_mode_resolution.h"
 #include "display_device/windows/win_api_utils.h"
 
@@ -18,7 +19,8 @@ namespace display_device {
      */
     enum class Strategy {
       Relaxed,
-      Strict
+      Strict,
+      Exact
     };
 
     enum class PersistPolicy {
@@ -56,6 +58,11 @@ namespace display_device {
         bool refresh_rate_changed;
         if (strategy == Strategy::Relaxed) {
           refresh_rate_changed = !win_utils::fuzzyCompareRefreshRates(Rational {path->targetInfo.refreshRate.Numerator, path->targetInfo.refreshRate.Denominator}, mode.m_refresh_rate);
+        } else if (strategy == Strategy::Exact) {
+          refresh_rate_changed = !equalRefreshRates(
+            Rational {path->targetInfo.refreshRate.Numerator, path->targetInfo.refreshRate.Denominator},
+            mode.m_refresh_rate
+          );
         } else {
           refresh_rate_changed = path->targetInfo.refreshRate.Numerator != mode.m_refresh_rate.m_numerator ||
                                  path->targetInfo.refreshRate.Denominator != mode.m_refresh_rate.m_denominator;
@@ -332,6 +339,45 @@ namespace display_device {
     }
 
     return apply_and_verify(Strategy::Strict);
+  }
+
+  bool WinDisplayDevice::setDisplayModesExactTemporary(const DeviceDisplayModeMap &modes) {
+    if (modes.empty()) {
+      DD_LOG(error) << "Modes map is empty!";
+      return false;
+    }
+
+    for (const auto &[device_id, mode] : modes) {
+      if (mode.m_refresh_rate.m_numerator == 0 || mode.m_refresh_rate.m_denominator == 0) {
+        DD_LOG(error) << "Invalid refresh rate for exact temporary restore on device " << device_id << "!";
+        return false;
+      }
+    }
+
+    std::set<std::string> device_ids;
+    for (const auto &[device_id, _] : modes) {
+      device_ids.insert(device_id);
+    }
+    const auto all_device_ids {win_utils::getAllDeviceIdsAndMatchingDuplicates(*m_w_api, device_ids)};
+    if (all_device_ids.empty() || all_device_ids.size() != device_ids.size()) {
+      DD_LOG(error) << "Failed to get all duplicated devices for exact temporary restore!";
+      return false;
+    }
+
+    const auto current_modes {getCurrentDisplayModes(device_ids)};
+    if (current_modes.empty()) {
+      return false;
+    }
+    if (equalDisplayModes(current_modes, modes)) {
+      return true;
+    }
+
+    if (!doSetModes(*m_w_api, modes, Strategy::Exact, PersistPolicy::Temporary)) {
+      return false;
+    }
+
+    const auto applied_modes {getCurrentDisplayModes(device_ids)};
+    return !applied_modes.empty() && equalDisplayModes(applied_modes, modes);
   }
 
   bool WinDisplayDevice::setDisplayModesWithFallback(const DeviceDisplayModeMap &modes) {
