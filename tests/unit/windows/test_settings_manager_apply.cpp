@@ -149,21 +149,21 @@ namespace {
     }
 
     void expectedSetAsPrimaryCall(InSequence &sequence /* To ensure that sequence is created outside this scope */, const std::string &device_id, const bool success = true) {
-      EXPECT_CALL(*m_dd_api, setAsPrimary(device_id))
+      EXPECT_CALL(*m_dd_api, setAsPrimaryTemporary(device_id))
         .Times(1)
         .WillOnce(Return(success))
         .RetiresOnSaturation();
     }
 
     void expectedPrimaryGuardCall(InSequence &sequence /* To ensure that sequence is created outside this scope */, const std::string &device_id) {
-      EXPECT_CALL(*m_dd_api, setAsPrimary(device_id))
+      EXPECT_CALL(*m_dd_api, setAsPrimaryTemporary(device_id))
         .Times(1)
         .WillOnce(Return(true))
         .RetiresOnSaturation();
     }
 
     void expectedSetDisplayModesCall(InSequence &sequence /* To ensure that sequence is created outside this scope */, const display_device::DeviceDisplayModeMap &modes, const bool success = true) {
-      EXPECT_CALL(*m_dd_api, setDisplayModes(modes))
+      EXPECT_CALL(*m_dd_api, setDisplayModesTemporary(modes))
         .Times(1)
         .WillOnce(Return(success))
         .RetiresOnSaturation();
@@ -177,7 +177,7 @@ namespace {
     }
 
     void expectedSetDisplayModesGuardCall(InSequence &sequence /* To ensure that sequence is created outside this scope */, const display_device::DeviceDisplayModeMap &modes) {
-      EXPECT_CALL(*m_dd_api, setDisplayModes(modes))
+      EXPECT_CALL(*m_dd_api, setDisplayModesTemporary(modes))
         .Times(1)
         .WillOnce(Return(true))
         .RetiresOnSaturation();

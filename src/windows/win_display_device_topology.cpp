@@ -214,8 +214,9 @@ namespace display_device {
 
       DD_LOG(error) << "Failed to get updated topology!";
 
-      // Revert back to the original topology
-      const UINT32 flags {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE | SDC_VIRTUAL_MODE_AWARE};
+      // Undo the temporary topology change without persisting the previous
+      // active topology, which may itself be an intermediate session layout.
+      const UINT32 flags {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_VIRTUAL_MODE_AWARE};
       static_cast<void>(m_w_api->setDisplayConfig(original_data->m_paths, original_data->m_modes, flags));  // Return value does not matter as we are trying out best to undo
     }
 

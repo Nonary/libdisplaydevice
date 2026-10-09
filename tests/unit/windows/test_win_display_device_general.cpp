@@ -71,6 +71,28 @@ TEST_F_S_MOCKED(IsApiAccessAvailable, FailedToSetDisplayConfig) {
   EXPECT_FALSE(m_win_dd.isApiAccessAvailable());
 }
 
+TEST_F_S_MOCKED(SetDisplayOriginTemporary, DoesNotSaveTheActiveTopology) {
+  const auto initial_pam {ut_consts::PAM_3_ACTIVE};
+  auto expected_pam {initial_pam};
+  const auto index {expected_pam->m_paths.at(0).sourceInfo.sourceModeInfoIdx};
+  expected_pam->m_modes.at(index).sourceMode.position = {-1920, 100};
+
+  InSequence sequence;
+  EXPECT_CALL(*m_layer, queryDisplayConfig(display_device::QueryType::Active))
+    .WillOnce(Return(initial_pam));
+  EXPECT_CALL(*m_layer, getMonitorDevicePath(_))
+    .WillOnce(Return("Path1"));
+  EXPECT_CALL(*m_layer, getDeviceId(_))
+    .WillOnce(Return("DeviceId1"));
+  EXPECT_CALL(*m_layer, getDisplayName(_))
+    .WillOnce(Return("DisplayName1"));
+  const UINT32 temporary_flags {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES | SDC_VIRTUAL_MODE_AWARE};
+  EXPECT_CALL(*m_layer, setDisplayConfig(expected_pam->m_paths, expected_pam->m_modes, temporary_flags))
+    .WillOnce(Return(ERROR_SUCCESS));
+
+  EXPECT_TRUE(m_win_dd.setDisplayOriginTemporary("DeviceId1", {-1920, 100}));
+}
+
 TEST_F_S(EnumAvailableDevices) {
   // Note: we can't verify live data precisely, so just basic check
   // is performed regarding active vs. inactive devices

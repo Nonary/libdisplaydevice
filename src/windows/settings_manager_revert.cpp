@@ -87,11 +87,13 @@ namespace display_device {
       }
     }
 
+    // Keep every restore stage temporary. Windows may substitute a topology,
+    // and a later stage can fail; neither case may replace the saved baseline.
     // 2) Restore primary device if needed.
     if (!state.m_modified.m_original_primary_device.empty()) {
       DD_LOG(info) << "Restoring original primary device: " << toJson(state.m_modified.m_original_primary_device);
       system_settings_touched = true;
-      if (!m_dd_api->setAsPrimary(state.m_modified.m_original_primary_device)) {
+      if (!m_dd_api->setAsPrimaryTemporary(state.m_modified.m_original_primary_device)) {
         DD_LOG(error) << "Failed to restore original primary device!";
         return RevertResult::RevertingPrimaryDeviceFailed;
       }
@@ -100,7 +102,7 @@ namespace display_device {
     // 3) Restore display modes if needed.
     if (!state.m_modified.m_original_modes.empty()) {
       DD_LOG(info) << "Restoring original display modes.";
-      if (!m_dd_api->setDisplayModes(state.m_modified.m_original_modes)) {
+      if (!m_dd_api->setDisplayModesTemporary(state.m_modified.m_original_modes)) {
         DD_LOG(error) << "Failed to restore original display modes!";
         return RevertResult::RevertingDisplayModesFailed;
       }

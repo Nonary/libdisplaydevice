@@ -244,6 +244,30 @@ TEST_F_S_MOCKED(SetAsPrimary, NonDuplicatePrimaryDeviceSet) {
   EXPECT_TRUE(m_win_dd.setAsPrimary("DeviceId4"));
 }
 
+TEST_F_S_MOCKED(SetAsPrimaryTemporary, DoesNotSaveTheActiveTopology) {
+  const auto initial_pam {ut_consts::PAM_4_ACTIVE_WITH_2_DUPLICATES};
+  const auto origin {initial_pam->m_modes.at(initial_pam->m_paths.at(3).sourceInfo.sourceModeInfoIdx).sourceMode.position};
+  auto expected_pam {initial_pam};
+  for (int i = 0; i < 4; ++i) {
+    shiftModeBy(expected_pam, i, origin);
+  }
+
+  InSequence sequence;
+  EXPECT_CALL(*m_layer, queryDisplayConfig(display_device::QueryType::Active))
+    .WillOnce(Return(initial_pam));
+  setupExpectedGetActivePathCall(4, sequence);
+  for (int i = 1; i <= 4; ++i) {
+    EXPECT_CALL(*m_layer, getDeviceId(_))
+      .WillOnce(Return("DeviceId" + std::to_string(i)))
+      .RetiresOnSaturation();
+  }
+  const UINT32 temporary_flags {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_VIRTUAL_MODE_AWARE};
+  EXPECT_CALL(*m_layer, setDisplayConfig(expected_pam->m_paths, expected_pam->m_modes, temporary_flags))
+    .WillOnce(Return(ERROR_SUCCESS));
+
+  EXPECT_TRUE(m_win_dd.setAsPrimaryTemporary("DeviceId4"));
+}
+
 TEST_F_S_MOCKED(SetAsPrimary, SharedModeShiftedOnce) {
   auto initial_pam {ut_consts::PAM_4_ACTIVE_WITH_2_DUPLICATES};
   initial_pam->m_paths.at(2).sourceInfo.sourceModeInfoIdx = initial_pam->m_paths.at(1).sourceInfo.sourceModeInfoIdx;

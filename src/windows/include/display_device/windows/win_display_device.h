@@ -67,6 +67,9 @@ namespace display_device {
     /** For details @see WinDisplayDeviceInterface::setAsPrimary */
     [[nodiscard]] bool setAsPrimary(const std::string &device_id) override;
 
+    /** For details @see WinDisplayDeviceInterface::setAsPrimaryTemporary */
+    [[nodiscard]] bool setAsPrimaryTemporary(const std::string &device_id) override;
+
     /** For details @see WinDisplayDeviceInterface::getCurrentHdrStates */
     [[nodiscard]] HdrStateMap getCurrentHdrStates(const std::set<std::string> &device_ids) const override;
 
@@ -79,7 +82,13 @@ namespace display_device {
     /** For details @see WinDisplayDeviceInterface::setDisplayOrigin */
     [[nodiscard]] bool setDisplayOrigin(const std::string &device_id, const Point &origin) override;
 
+    /** For details @see WinDisplayDeviceInterface::setDisplayOriginTemporary */
+    [[nodiscard]] bool setDisplayOriginTemporary(const std::string &device_id, const Point &origin) override;
+
   private:
+    [[nodiscard]] bool setAsPrimaryImpl(const std::string &device_id, bool save_to_database);
+    [[nodiscard]] bool setDisplayOriginImpl(const std::string &device_id, const Point &origin, bool save_to_database);
+
     std::shared_ptr<WinApiLayerInterface> m_w_api;
   };
 }  // namespace display_device

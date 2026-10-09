@@ -38,6 +38,14 @@ namespace display_device {
   }
 
   bool WinDisplayDevice::setAsPrimary(const std::string &device_id) {
+    return setAsPrimaryImpl(device_id, true);
+  }
+
+  bool WinDisplayDevice::setAsPrimaryTemporary(const std::string &device_id) {
+    return setAsPrimaryImpl(device_id, false);
+  }
+
+  bool WinDisplayDevice::setAsPrimaryImpl(const std::string &device_id, const bool save_to_database) {
     if (device_id.empty()) {
       DD_LOG(error) << "Device id is empty!";
       return false;
@@ -97,7 +105,10 @@ namespace display_device {
       modified_modes.insert(*source_index);
     }
 
-    const UINT32 flags {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE | SDC_VIRTUAL_MODE_AWARE};
+    UINT32 flags {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_VIRTUAL_MODE_AWARE};
+    if (save_to_database) {
+      flags |= SDC_SAVE_TO_DATABASE;
+    }
     const LONG result {m_w_api->setDisplayConfig(display_data->m_paths, display_data->m_modes, flags)};
     if (result != ERROR_SUCCESS) {
       DD_LOG(error) << m_w_api->getErrorString(result) << " failed to set primary mode for " << device_id << "!";

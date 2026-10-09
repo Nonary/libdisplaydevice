@@ -302,6 +302,13 @@ namespace display_device {
       return false;
     }
 
+    for (const auto &[device_id, mode] : modes) {
+      if (device_id.empty() || mode.m_refresh_rate.m_numerator == 0 || mode.m_refresh_rate.m_denominator == 0) {
+        DD_LOG(error) << "Invalid device or refresh rate for temporary display mode!";
+        return false;
+      }
+    }
+
     std::set<std::string> device_ids;
     for (const auto &[device_id, _] : modes) {
       device_ids.insert(device_id);
@@ -326,6 +333,11 @@ namespace display_device {
       return true;
     }
 
+    const auto original_data {m_w_api->queryDisplayConfig(QueryType::Active)};
+    if (!original_data) {
+      return false;
+    }
+
     const auto apply_and_verify = [&](const Strategy strategy) {
       if (!doSetModes(*m_w_api, resolved->resolved, strategy, PersistPolicy::Temporary)) {
         return false;
@@ -338,7 +350,17 @@ namespace display_device {
       return true;
     }
 
-    return apply_and_verify(Strategy::Strict);
+    if (apply_and_verify(Strategy::Strict)) {
+      return true;
+    }
+
+    // A relaxed apply may partially change the live modes even when its
+    // readback or the strict retry fails. Undo it without saving the session
+    // topology to the user's display database.
+    const UINT32 flags {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_VIRTUAL_MODE_AWARE};
+    static_cast<void>(m_w_api->setDisplayConfig(original_data->m_paths, original_data->m_modes, flags));
+    DD_LOG(error) << "Failed to set temporary display mode(-s) completely!";
+    return false;
   }
 
   bool WinDisplayDevice::setDisplayModesExactTemporary(const DeviceDisplayModeMap &modes) {

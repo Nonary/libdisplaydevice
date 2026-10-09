@@ -239,7 +239,7 @@ namespace display_device {
         system_settings_touched = true;
 
         DD_LOG(info) << info_preamble << toJson(new_device);
-        if (!m_dd_api->setAsPrimary(new_device)) {
+        if (!m_dd_api->setAsPrimaryTemporary(new_device)) {
           DD_LOG(error) << error_log;
           return false;
         }
@@ -314,7 +314,9 @@ namespace display_device {
     const auto try_change {[&](const DeviceDisplayModeMap &new_modes, const auto info_preamble, const auto error_log) {
       if (current_display_modes != new_modes) {
         DD_LOG(info) << info_preamble << toJson(new_modes);
-        if (!m_dd_api->setDisplayModes(new_modes)) {
+        // Saving modes also saves the entire active topology. Session settings
+        // must not make an exclusive or intermediate topology the user's baseline.
+        if (!m_dd_api->setDisplayModesTemporary(new_modes)) {
           system_settings_touched = true;
           DD_LOG(error) << error_log;
           return false;

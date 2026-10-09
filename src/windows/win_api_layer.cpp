@@ -661,7 +661,13 @@ namespace display_device {
       for (int tries = 0; tries < max_tries; ++tries) {
         UINT32 pc = static_cast<UINT32>(paths.size());
         UINT32 mc = static_cast<UINT32>(modes.size());
-        result = QueryDisplayConfig(flags, &pc, pc ? paths.data() : nullptr, &mc, mc ? modes.data() : nullptr, nullptr);
+        // QueryDisplayConfig requires non-null arrays even when the capacity
+        // is zero (a valid headless state, or inactive paths with no modes).
+        // Keep the counts zero so a newly attached output still triggers the
+        // normal insufficient-buffer retry instead of becoming a fake path.
+        DISPLAYCONFIG_PATH_INFO empty_path {};
+        DISPLAYCONFIG_MODE_INFO empty_mode {};
+        result = QueryDisplayConfig(flags, &pc, pc ? paths.data() : &empty_path, &mc, mc ? modes.data() : &empty_mode, nullptr);
 
         if (result == ERROR_SUCCESS) {
           flush_failures();

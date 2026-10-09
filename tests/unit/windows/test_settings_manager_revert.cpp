@@ -111,7 +111,7 @@ namespace {
     }
 
     void expectedDefaultDisplayModeGuardCall(InSequence & /* To ensure that sequence is created outside this scope */) {
-      EXPECT_CALL(*m_dd_api, setDisplayModes(CURRENT_MODIFIED_DISPLAY_MODES))
+      EXPECT_CALL(*m_dd_api, setDisplayModesTemporary(CURRENT_MODIFIED_DISPLAY_MODES))
         .Times(1)
         .WillOnce(Return(true))
         .RetiresOnSaturation();
@@ -129,7 +129,7 @@ namespace {
     }
 
     void expectedDefaultPrimaryDeviceGuardCall(InSequence & /* To ensure that sequence is created outside this scope */) {
-      EXPECT_CALL(*m_dd_api, setAsPrimary(CURRENT_MODIFIED_PRIMARY_DEVICE))
+      EXPECT_CALL(*m_dd_api, setAsPrimaryTemporary(CURRENT_MODIFIED_PRIMARY_DEVICE))
         .Times(1)
         .WillOnce(Return(true))
         .RetiresOnSaturation();
@@ -143,7 +143,7 @@ namespace {
     }
 
     void expectedDefaultDisplayModeCall(InSequence & /* To ensure that sequence is created outside this scope */, bool has_changed = true) {
-      EXPECT_CALL(*m_dd_api, setDisplayModes(ut_consts::SDCS_FULL->m_modified.m_original_modes))
+      EXPECT_CALL(*m_dd_api, setDisplayModesTemporary(ut_consts::SDCS_FULL->m_modified.m_original_modes))
         .Times(1)
         .WillOnce(Return(true))
         .RetiresOnSaturation();
@@ -154,7 +154,7 @@ namespace {
     }
 
     void expectedDefaultPrimaryDeviceCall(InSequence & /* To ensure that sequence is created outside this scope */) {
-      EXPECT_CALL(*m_dd_api, setAsPrimary(ut_consts::SDCS_FULL->m_modified.m_original_primary_device))
+      EXPECT_CALL(*m_dd_api, setAsPrimaryTemporary(ut_consts::SDCS_FULL->m_modified.m_original_primary_device))
         .Times(1)
         .WillOnce(Return(true))
         .RetiresOnSaturation();
@@ -355,7 +355,7 @@ TEST_F_S_MOCKED(RevertModifiedSettings, FailedToRevertDisplayModes) {
   expectedDefaultCallsUntilModifiedSettings(sequence, sdcs_stripped);
   expectedDefaultMofifiedTopologyCalls(sequence);
   expectedDefaultDisplayModeGuardInitCall(sequence);
-  EXPECT_CALL(*m_dd_api, setDisplayModes(ut_consts::SDCS_FULL->m_modified.m_original_modes))
+  EXPECT_CALL(*m_dd_api, setDisplayModesTemporary(ut_consts::SDCS_FULL->m_modified.m_original_modes))
     .Times(1)
     .WillOnce(Return(false))
     .RetiresOnSaturation();
@@ -399,7 +399,7 @@ TEST_F_S_MOCKED(RevertModifiedSettings, FailedToRevertPrimaryDevice) {
   expectedDefaultCallsUntilModifiedSettings(sequence, sdcs_stripped);
   expectedDefaultMofifiedTopologyCalls(sequence);
   expectedDefaultPrimaryDeviceGuardInitCall(sequence);
-  EXPECT_CALL(*m_dd_api, setAsPrimary(ut_consts::SDCS_FULL->m_modified.m_original_primary_device))
+  EXPECT_CALL(*m_dd_api, setAsPrimaryTemporary(ut_consts::SDCS_FULL->m_modified.m_original_primary_device))
     .Times(1)
     .WillOnce(Return(false))
     .RetiresOnSaturation();
@@ -492,7 +492,7 @@ TEST_F_S_MOCKED(TopologyGuard, FailedToSetTopology) {
     .Times(1)
     .WillOnce(Return(false))
     .RetiresOnSaturation();
-  EXPECT_CALL(*m_dd_api, enumAvailableDevices())
+  EXPECT_CALL(*m_dd_api, enumAvailableDevices(display_device::DeviceEnumerationDetail::Full))
     .Times(1)
     .WillOnce(Return(CURRENT_DEVICES))
     .RetiresOnSaturation();

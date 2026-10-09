@@ -515,8 +515,8 @@ TEST_F_S_MOCKED(SetCurrentTopology, TopologyWasSetAccordingToWinApi, CouldNotGet
     .Times(1)
     .WillOnce(Return(ut_consts::PAM_NULL));
 
-  // Called when doing the undo
-  expected_flags = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE | SDC_VIRTUAL_MODE_AWARE;
+  // Undo must also remain temporary if the previous topology was a session layout.
+  expected_flags = SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_VIRTUAL_MODE_AWARE;
   EXPECT_CALL(*m_layer, setDisplayConfig(ut_consts::PAM_3_ACTIVE->m_paths, ut_consts::PAM_3_ACTIVE->m_modes, expected_flags))
     .Times(1)
     .WillOnce(Return(ERROR_SUCCESS));

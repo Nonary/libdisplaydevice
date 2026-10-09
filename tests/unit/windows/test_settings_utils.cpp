@@ -384,7 +384,7 @@ TEST_F_S_MOCKED(ModeGuardFn, Success) {
     .Times(1)
     .WillOnce(Return(display_device::DeviceDisplayModeMap {{"DeviceId1", {}}}))
     .RetiresOnSaturation();
-  EXPECT_CALL(m_dd_api, setDisplayModes(display_device::DeviceDisplayModeMap {{"DeviceId1", {}}}))
+  EXPECT_CALL(m_dd_api, setDisplayModesTemporary(display_device::DeviceDisplayModeMap {{"DeviceId1", {}}}))
     .Times(1)
     .WillOnce(Return(true))
     .RetiresOnSaturation();
@@ -398,7 +398,7 @@ TEST_F_S_MOCKED(ModeGuardFn, Failure) {
     .Times(1)
     .WillOnce(Return(display_device::DeviceDisplayModeMap {{"DeviceId1", {}}}))
     .RetiresOnSaturation();
-  EXPECT_CALL(m_dd_api, setDisplayModes(display_device::DeviceDisplayModeMap {{"DeviceId1", {}}}))
+  EXPECT_CALL(m_dd_api, setDisplayModesTemporary(display_device::DeviceDisplayModeMap {{"DeviceId1", {}}}))
     .Times(1)
     .WillOnce(Return(false))
     .RetiresOnSaturation();
@@ -412,7 +412,7 @@ TEST_F_S_MOCKED(PrimaryGuardFn, Success) {
     .Times(1)
     .WillOnce(Return(true))
     .RetiresOnSaturation();
-  EXPECT_CALL(m_dd_api, setAsPrimary("DeviceId1"))
+  EXPECT_CALL(m_dd_api, setAsPrimaryTemporary("DeviceId1"))
     .Times(1)
     .WillOnce(Return(true))
     .RetiresOnSaturation();
@@ -426,7 +426,7 @@ TEST_F_S_MOCKED(PrimaryGuardFn, Failure) {
     .Times(1)
     .WillOnce(Return(false))
     .RetiresOnSaturation();
-  EXPECT_CALL(m_dd_api, setAsPrimary(""))
+  EXPECT_CALL(m_dd_api, setAsPrimaryTemporary(""))
     .Times(1)
     .WillOnce(Return(false))
     .RetiresOnSaturation();

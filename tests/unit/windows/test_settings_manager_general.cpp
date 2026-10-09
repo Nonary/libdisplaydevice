@@ -67,16 +67,13 @@ TEST_F_S_MOCKED(NullptrPersistentStateProvided) {
 
 TEST_F_S_MOCKED(EnumAvailableDevices) {
   const display_device::EnumeratedDeviceList test_list {
-    {"DeviceId1",
-     "",
-     "FriendlyName1",
-     std::nullopt}
+    {.m_device_id = "DeviceId1", .m_friendly_name = "FriendlyName1"}
   };
 
   EXPECT_CALL(*m_settings_persistence_api, load())
     .Times(1)
     .WillOnce(Return(serializeState(ut_consts::SDCS_EMPTY)));
-  EXPECT_CALL(*m_dd_api, enumAvailableDevices())
+  EXPECT_CALL(*m_dd_api, enumAvailableDevices(display_device::DeviceEnumerationDetail::Full))
     .Times(1)
     .WillOnce(Return(test_list));
 

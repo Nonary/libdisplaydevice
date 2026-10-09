@@ -190,6 +190,14 @@ namespace display_device {
   }
 
   bool WinDisplayDevice::setDisplayOrigin(const std::string &device_id, const display_device::Point &origin) {
+    return setDisplayOriginImpl(device_id, origin, true);
+  }
+
+  bool WinDisplayDevice::setDisplayOriginTemporary(const std::string &device_id, const display_device::Point &origin) {
+    return setDisplayOriginImpl(device_id, origin, false);
+  }
+
+  bool WinDisplayDevice::setDisplayOriginImpl(const std::string &device_id, const display_device::Point &origin, const bool save_to_database) {
     if (device_id.empty()) {
       DD_LOG(error) << "Display id is empty; cannot move display.";
       return false;
@@ -221,7 +229,10 @@ namespace display_device {
     source_mode->position.x = static_cast<LONG>(origin.m_x);
     source_mode->position.y = static_cast<LONG>(origin.m_y);
 
-    const UINT32 flags {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES | SDC_SAVE_TO_DATABASE | SDC_VIRTUAL_MODE_AWARE};
+    UINT32 flags {SDC_APPLY | SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_ALLOW_CHANGES | SDC_VIRTUAL_MODE_AWARE};
+    if (save_to_database) {
+      flags |= SDC_SAVE_TO_DATABASE;
+    }
     const LONG result {m_w_api->setDisplayConfig(display_data->m_paths, display_data->m_modes, flags)};
     if (result != ERROR_SUCCESS) {
       DD_LOG(error) << m_w_api->getErrorString(result) << " failed to move device " << device_id << " to new origin!";

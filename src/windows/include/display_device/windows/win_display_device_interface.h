@@ -181,6 +181,11 @@ namespace display_device {
     [[nodiscard]] virtual bool setDisplayOrigin(const std::string &device_id, const Point &origin) = 0;
 
     /**
+     * @brief Move a display without saving the active topology to the OS database.
+     */
+    [[nodiscard]] virtual bool setDisplayOriginTemporary(const std::string &device_id, const Point &origin) = 0;
+
+    /**
      * @brief Check whether the specified device is primary.
      * @param device_id A device to perform the check for.
      * @returns True if the device is primary, false otherwise.
@@ -204,6 +209,11 @@ namespace display_device {
      * @examples_end
      */
     [[nodiscard]] virtual bool setAsPrimary(const std::string &device_id) = 0;
+
+    /**
+     * @brief Set the primary display without saving the active topology to the OS database.
+     */
+    [[nodiscard]] virtual bool setAsPrimaryTemporary(const std::string &device_id) = 0;
 
     /**
      * @brief Get HDR state for the devices.

@@ -8,6 +8,7 @@
 // system includes
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <thread>
 
 // local includes
@@ -474,7 +475,7 @@ namespace display_device::win_utils {
     DD_LOG(debug) << "Got primary device in primaryGuardFn:\n"
                   << toJson(primary_device);
     return [&win_dd, primary_device]() {
-      if (!win_dd.setAsPrimary(primary_device)) {
+      if (!win_dd.setAsPrimaryTemporary(primary_device)) {
         DD_LOG(error) << "failed to revert primary device in primaryGuardFn! Used the following device id:\n"
                       << toJson(primary_device);
       }
