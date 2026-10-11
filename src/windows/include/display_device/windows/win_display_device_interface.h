@@ -154,6 +154,15 @@ namespace display_device {
     [[nodiscard]] virtual bool setDisplayModesTemporary(const DeviceDisplayModeMap &modes) = 0;
 
     /**
+     * @brief Apply saved modes temporarily without supported-mode substitution.
+     * @returns False when unsupported or when exact mode application/verification fails.
+     * The default preserves source compatibility without silently relaxing restore.
+     */
+    [[nodiscard]] virtual bool setDisplayModesExactTemporary(const DeviceDisplayModeMap &) {
+      return false;
+    }
+
+    /**
      * @brief Set new display modes for the devices using best-effort fallback.
      *
      * Behaves like setDisplayModes but is explicitly allowed to fall back to the

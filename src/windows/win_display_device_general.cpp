@@ -33,7 +33,15 @@ namespace display_device {
   }
 
   EnumeratedDeviceList WinDisplayDevice::enumAvailableDevices(DeviceEnumerationDetail detail) const {
-    const auto display_data {m_w_api->queryDisplayConfig(QueryType::All)};
+    return enumerateDevices(detail, QueryType::All);
+  }
+
+  EnumeratedDeviceList WinDisplayDevice::enumActiveDevices(DeviceEnumerationDetail detail) const {
+    return enumerateDevices(detail, QueryType::Active);
+  }
+
+  EnumeratedDeviceList WinDisplayDevice::enumerateDevices(DeviceEnumerationDetail detail, QueryType query_type) const {
+    const auto display_data {m_w_api->queryDisplayConfig(query_type)};
     if (!display_data) {
       // Error already logged
       return {};
