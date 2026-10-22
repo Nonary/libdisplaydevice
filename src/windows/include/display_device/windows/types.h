@@ -87,6 +87,9 @@ namespace display_device {
 
   /**
    * @brief Display's mode (resolution + refresh rate).
+   * @note This is not a complete Windows display-path snapshot. It does not carry
+   *       Dynamic Refresh Rate (DRR) boost state or physical target signal timing.
+   *       The refresh rational alone cannot identify or restore DRR state.
    */
   struct DisplayMode {
     Resolution m_resolution {};

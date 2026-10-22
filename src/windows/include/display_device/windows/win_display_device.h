@@ -58,7 +58,7 @@ namespace display_device {
     /** For details @see WinDisplayDeviceInterface::setDisplayModesTemporary */
     [[nodiscard]] bool setDisplayModesTemporary(const DeviceDisplayModeMap &modes) override;
 
-    /** Apply saved modes exactly for restore without changing the OS database. */
+    /** For the frequency-only exactness contract, @see WinDisplayDeviceInterface::setDisplayModesExactTemporary */
     [[nodiscard]] bool setDisplayModesExactTemporary(const DeviceDisplayModeMap &modes) override;
 
     /** For details @see WinDisplayDeviceInterface::setDisplayModesWithFallback */
