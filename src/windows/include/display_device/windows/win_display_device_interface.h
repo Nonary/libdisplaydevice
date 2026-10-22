@@ -118,6 +118,8 @@ namespace display_device {
      * @param device_ids A list of devices to get the modes for.
      * @returns A map of device modes per a device or an empty map if a mode could not be found (e.g. device is inactive).
      *          Empty map can also be returned if an error has occurred.
+     * @note These modes contain resolution and refresh frequency only, not a complete
+     *       Windows display-path snapshot or Dynamic Refresh Rate (DRR) state.
      * @examples
      * const WinDisplayDeviceInterface* iface = getIface(...);
      * const std::set<std::string> device_ids { "DEVICE_ID_1", "DEVICE_ID_2" };
@@ -152,6 +154,28 @@ namespace display_device {
      * @returns True if modes were set, false otherwise.
      */
     [[nodiscard]] virtual bool setDisplayModesTemporary(const DeviceDisplayModeMap &modes) = 0;
+
+    /**
+     * @brief Apply resolution and refresh frequency temporarily without supported-mode substitution.
+     *
+     * Exactness is limited to resolution and numerical refresh frequency. Equivalent
+     * rationals (for example, 240/4 and 60/1) represent the same frequency; their
+     * numerator and denominator are not required to match individually.
+     *
+     * @param modes A map of resolutions and refresh frequencies to apply without
+     *              saving to the OS database.
+     * @returns True if the current or applied modes match those resolutions and
+     *          frequencies; false when unsupported or when application/verification fails.
+     * @warning DisplayMode does not capture the Windows DRR boost flag or physical
+     *          target timing. Success does not guarantee that DRR or other display-path
+     *          state has been preserved or restored. Callers requiring full path-state
+     *          restoration must not use this result as confirmation of that restoration.
+     *
+     * The default preserves source compatibility without silently substituting modes.
+     */
+    [[nodiscard]] virtual bool setDisplayModesExactTemporary(const DeviceDisplayModeMap &) {
+      return false;
+    }
 
     /**
      * @brief Set new display modes for the devices using best-effort fallback.

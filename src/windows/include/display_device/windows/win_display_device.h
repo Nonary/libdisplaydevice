@@ -31,6 +31,9 @@ namespace display_device {
       DeviceEnumerationDetail detail = DeviceEnumerationDetail::Full
     ) const override;
 
+    /** Enumerate only active paths, avoiding All-paths probes during capture. */
+    [[nodiscard]] EnumeratedDeviceList enumActiveDevices(DeviceEnumerationDetail detail) const;
+
     /** For details @see WinDisplayDeviceInterface::getDisplayName */
     [[nodiscard]] std::string getDisplayName(const std::string &device_id) const override;
 
@@ -55,8 +58,8 @@ namespace display_device {
     /** For details @see WinDisplayDeviceInterface::setDisplayModesTemporary */
     [[nodiscard]] bool setDisplayModesTemporary(const DeviceDisplayModeMap &modes) override;
 
-    /** Apply saved modes exactly for restore without changing the OS database. */
-    [[nodiscard]] bool setDisplayModesExactTemporary(const DeviceDisplayModeMap &modes);
+    /** For the frequency-only exactness contract, @see WinDisplayDeviceInterface::setDisplayModesExactTemporary */
+    [[nodiscard]] bool setDisplayModesExactTemporary(const DeviceDisplayModeMap &modes) override;
 
     /** For details @see WinDisplayDeviceInterface::setDisplayModesWithFallback */
     [[nodiscard]] bool setDisplayModesWithFallback(const DeviceDisplayModeMap &modes) override;
@@ -80,6 +83,7 @@ namespace display_device {
     [[nodiscard]] bool setDisplayOrigin(const std::string &device_id, const Point &origin) override;
 
   private:
+    [[nodiscard]] EnumeratedDeviceList enumerateDevices(DeviceEnumerationDetail detail, QueryType query_type) const;
     std::shared_ptr<WinApiLayerInterface> m_w_api;
   };
 }  // namespace display_device

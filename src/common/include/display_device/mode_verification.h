@@ -7,6 +7,8 @@
 namespace display_device {
   // Compare frequencies, not their representation. Do not accept invalid rates
   // or apply the tolerance used when selecting a supported streaming mode.
+  // This comparison does not establish equality of display-path state, such as
+  // Windows Dynamic Refresh Rate (DRR), which is not encoded by a rational alone.
   inline bool equalRefreshRates(const Rational &lhs, const Rational &rhs) {
     return lhs.m_numerator != 0 && rhs.m_numerator != 0 &&
            lhs.m_denominator != 0 && rhs.m_denominator != 0 &&
