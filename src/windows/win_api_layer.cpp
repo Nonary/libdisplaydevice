@@ -6,7 +6,6 @@
 #include "display_device/windows/win_api_layer.h"
 #include "display_device/windows/win_api_recovery.h"
 #include "display_device/windows/win_api_utils.h"
-#include "display_device/windows/win_display_query_stop.h"
 
 // system includes
 #include <boost/algorithm/string.hpp>
@@ -31,30 +30,7 @@
 #include <dxgi1_2.h>
 #include <wrl/client.h>
 
-namespace {
-  thread_local display_device::DisplayRecoveryBehavior g_display_recovery_behavior = display_device::DisplayRecoveryBehavior::Automatic;
-}
-
 namespace display_device {
-  namespace detail {
-    DisplayRecoveryBehavior current_display_recovery_behavior() {
-      return g_display_recovery_behavior;
-    }
-
-    void set_display_recovery_behavior(DisplayRecoveryBehavior behavior) {
-      g_display_recovery_behavior = behavior;
-    }
-  }  // namespace detail
-
-  DisplayRecoveryBehaviorGuard::DisplayRecoveryBehaviorGuard(DisplayRecoveryBehavior behavior):
-      m_previous(detail::current_display_recovery_behavior()) {
-    detail::set_display_recovery_behavior(behavior);
-  }
-
-  DisplayRecoveryBehaviorGuard::~DisplayRecoveryBehaviorGuard() {
-    detail::set_display_recovery_behavior(m_previous);
-  }
-
   namespace {
     constexpr DWORD QUERY_ERROR_COOLDOWN_MS = 250;
     constexpr int MAX_TOPOLOGY_JOG_ATTEMPTS = 5;
@@ -282,7 +258,8 @@ namespace display_device {
       target_name.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
       target_name.header.size = sizeof(target_name);
 
-      LONG result {run_display_query([&] { return DisplayConfigGetDeviceInfo(&target_name.header); })};
+      check_display_query_stop();
+      LONG result {DisplayConfigGetDeviceInfo(&target_name.header)};
       if (result != ERROR_SUCCESS) {
         DD_LOG(error) << w_api.getErrorString(result) << " failed to get target device name!";
         return {};
@@ -297,8 +274,9 @@ namespace display_device {
      * @see getDeviceId implementation for more context regarding this madness.
      */
     bool getDeviceInterfaceDetail(const WinApiLayerInterface &w_api, HDEVINFO dev_info_handle, SP_DEVICE_INTERFACE_DATA &dev_interface_data, std::wstring &dev_interface_path, SP_DEVINFO_DATA &dev_info_data) {
+      check_display_query_stop();
       DWORD required_size_in_bytes {0};
-      if (run_display_query([&] { return SetupDiGetDeviceInterfaceDetailW(dev_info_handle, &dev_interface_data, nullptr, 0, &required_size_in_bytes, nullptr); })) {
+      if (SetupDiGetDeviceInterfaceDetailW(dev_info_handle, &dev_interface_data, nullptr, 0, &required_size_in_bytes, nullptr)) {
         DD_LOG(error) << "\"SetupDiGetDeviceInterfaceDetailW\" did not fail, what?!";
         return false;
       } else if (required_size_in_bytes <= 0) {
@@ -313,7 +291,8 @@ namespace display_device {
       auto detail_data {reinterpret_cast<SP_DEVICE_INTERFACE_DETAIL_DATA_W *>(buffer.data())};
       detail_data->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W);
 
-      if (!run_display_query([&] { return SetupDiGetDeviceInterfaceDetailW(dev_info_handle, &dev_interface_data, detail_data, required_size_in_bytes, nullptr, &dev_info_data); })) {
+      check_display_query_stop();
+      if (!SetupDiGetDeviceInterfaceDetailW(dev_info_handle, &dev_interface_data, detail_data, required_size_in_bytes, nullptr, &dev_info_data)) {
         DD_LOG(warning) << w_api.getErrorString(static_cast<LONG>(GetLastError())) << " \"SetupDiGetDeviceInterfaceDetailW\" failed.";
         return false;
       }
@@ -328,8 +307,9 @@ namespace display_device {
      * @see getDeviceId implementation for more context regarding this madness.
      */
     bool getDeviceInstanceId(const WinApiLayerInterface &w_api, HDEVINFO dev_info_handle, SP_DEVINFO_DATA &dev_info_data, std::wstring &instance_id) {
+      check_display_query_stop();
       DWORD required_size_in_characters {0};
-      if (run_display_query([&] { return SetupDiGetDeviceInstanceIdW(dev_info_handle, &dev_info_data, nullptr, 0, &required_size_in_characters); })) {
+      if (SetupDiGetDeviceInstanceIdW(dev_info_handle, &dev_info_data, nullptr, 0, &required_size_in_characters)) {
         DD_LOG(error) << "\"SetupDiGetDeviceInstanceIdW\" did not fail, what?!";
         return false;
       } else if (required_size_in_characters <= 0) {
@@ -338,7 +318,8 @@ namespace display_device {
       }
 
       instance_id.resize(required_size_in_characters);
-      if (!run_display_query([&] { return SetupDiGetDeviceInstanceIdW(dev_info_handle, &dev_info_data, instance_id.data(), instance_id.size(), nullptr); })) {
+      check_display_query_stop();
+      if (!SetupDiGetDeviceInstanceIdW(dev_info_handle, &dev_info_data, instance_id.data(), instance_id.size(), nullptr)) {
         DD_LOG(warning) << w_api.getErrorString(static_cast<LONG>(GetLastError())) << " \"SetupDiGetDeviceInstanceIdW\" failed.";
         return false;
       }
@@ -356,7 +337,6 @@ namespace display_device {
       check_display_query_stop();
       HKEY reg_key {SetupDiOpenDevRegKey(dev_info_handle, &dev_info_data, DICS_FLAG_GLOBAL, 0, DIREG_DEV, KEY_READ)};
       if (reg_key == INVALID_HANDLE_VALUE) {
-        check_display_query_stop();
         DD_LOG(warning) << w_api.getErrorString(static_cast<LONG>(GetLastError())) << " \"SetupDiOpenDevRegKey\" failed; proceeding without EDID.";
         edid.clear();
         return true;
@@ -373,7 +353,7 @@ namespace display_device {
 
       check_display_query_stop();
       DWORD required_size_in_bytes {0};
-      auto status {run_display_query([&] { return RegQueryValueExW(reg_key, L"EDID", nullptr, nullptr, nullptr, &required_size_in_bytes); })};
+      auto status {RegQueryValueExW(reg_key, L"EDID", nullptr, nullptr, nullptr, &required_size_in_bytes)};
       if (status == ERROR_FILE_NOT_FOUND || status == ERROR_PATH_NOT_FOUND) {
         // Many virtual/temporary devices do not expose EDID. This is expected.
         DD_LOG(verbose) << "EDID registry value not found for this device; proceeding without EDID.";
@@ -395,7 +375,8 @@ namespace display_device {
 
       edid.resize(required_size_in_bytes);
 
-      status = run_display_query([&] { return RegQueryValueExW(reg_key, L"EDID", nullptr, nullptr, reinterpret_cast<LPBYTE>(edid.data()), &required_size_in_bytes); });
+      check_display_query_stop();
+      status = RegQueryValueExW(reg_key, L"EDID", nullptr, nullptr, reinterpret_cast<LPBYTE>(edid.data()), &required_size_in_bytes);
       if (status == ERROR_FILE_NOT_FOUND || status == ERROR_PATH_NOT_FOUND) {
         DD_LOG(verbose) << "EDID registry value disappeared during read; proceeding without EDID.";
         edid.clear();
@@ -422,13 +403,9 @@ namespace display_device {
       check_display_query_stop();
       HDEVINFO dev_info_handle {SetupDiGetClassDevsW(&monitor_guid, nullptr, nullptr, DIGCF_DEVICEINTERFACE)};
       if (dev_info_handle == INVALID_HANDLE_VALUE) {
-        check_display_query_stop();
         DD_LOG(warning) << w_api.getErrorString(static_cast<LONG>(GetLastError()))
                         << " \"SetupDiGetClassDevsW\" failed.";
         return std::nullopt;
-      }
-      if (!dev_info_handle) {
-        check_display_query_stop();
       }
       if (dev_info_handle) {
         const auto dev_info_handle_cleanup {
@@ -439,11 +416,11 @@ namespace display_device {
           })
         };
 
-        check_display_query_stop();
         SP_DEVICE_INTERFACE_DATA dev_interface_data {};
         dev_interface_data.cbSize = sizeof(dev_interface_data);
         for (DWORD monitor_index = 0;; ++monitor_index) {
-          if (!run_display_query([&] { return SetupDiEnumDeviceInterfaces(dev_info_handle, nullptr, &monitor_guid, monitor_index, &dev_interface_data); })) {
+          check_display_query_stop();
+          if (!SetupDiEnumDeviceInterfaces(dev_info_handle, nullptr, &monitor_guid, monitor_index, &dev_interface_data)) {
             const DWORD error_code {GetLastError()};
             if (error_code == ERROR_NO_MORE_ITEMS) {
               break;
@@ -635,9 +612,9 @@ namespace display_device {
 
       // First get a baseline size
       UINT32 path_count = 0, mode_count = 0;
-      LONG result = run_display_query([&] {
-        return GetDisplayConfigBufferSizes(flags, &path_count, &mode_count);
-      });
+      check_display_query_stop();
+      LONG result = GetDisplayConfigBufferSizes(flags, &path_count, &mode_count);
+      check_display_query_stop();
       if (result != ERROR_SUCCESS) {
         if (use_virtual && (result == ERROR_NOT_SUPPORTED || result == ERROR_INVALID_PARAMETER)) {
           DD_LOG(debug) << getErrorString(result)
@@ -679,9 +656,9 @@ namespace display_device {
       for (int tries = 0; tries < max_tries; ++tries) {
         UINT32 pc = static_cast<UINT32>(paths.size());
         UINT32 mc = static_cast<UINT32>(modes.size());
-        result = run_display_query([&] {
-          return QueryDisplayConfig(flags, &pc, pc ? paths.data() : nullptr, &mc, mc ? modes.data() : nullptr, nullptr);
-        });
+        check_display_query_stop();
+        result = QueryDisplayConfig(flags, &pc, pc ? paths.data() : nullptr, &mc, mc ? modes.data() : nullptr, nullptr);
+        check_display_query_stop();
 
         if (result == ERROR_SUCCESS) {
           flush_failures();
@@ -695,7 +672,6 @@ namespace display_device {
                             << dumpPathsAndModes(paths, modes) << "\n";
             last_sig = sig_now;
           }
-          check_display_query_stop();
           return PathAndModeData {paths, modes};
         }
 
@@ -713,9 +689,9 @@ namespace display_device {
 
           // If we didn't grow, topology might be flapping—recompute sizes once.
           if (!grew) {
-            result = run_display_query([&] {
-              return GetDisplayConfigBufferSizes(flags, &path_count, &mode_count);
-            });
+            check_display_query_stop();
+            result = GetDisplayConfigBufferSizes(flags, &path_count, &mode_count);
+            check_display_query_stop();
             if (result != ERROR_SUCCESS) {
               break;
             }
@@ -753,12 +729,10 @@ namespace display_device {
         continue;
       }
       flush_failures();
-      check_display_query_stop();
       DD_LOG(error) << "Giving up after retries while querying display config.";
       return std::nullopt;
     }
 
-    check_display_query_stop();
     return std::nullopt;
   }
 
@@ -866,7 +840,8 @@ namespace display_device {
     target_name.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
     target_name.header.size = sizeof(target_name);
 
-    LONG result {run_display_query([&] { return DisplayConfigGetDeviceInfo(&target_name.header); })};
+    check_display_query_stop();
+    LONG result {DisplayConfigGetDeviceInfo(&target_name.header)};
     if (result != ERROR_SUCCESS) {
       DD_LOG(error) << getErrorString(result) << " failed to get target device name!";
       return {};
@@ -882,7 +857,8 @@ namespace display_device {
     source_name.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
     source_name.header.size = sizeof(source_name);
 
-    LONG result {run_display_query([&] { return DisplayConfigGetDeviceInfo(&source_name.header); })};
+    check_display_query_stop();
+    LONG result {DisplayConfigGetDeviceInfo(&source_name.header)};
     if (result != ERROR_SUCCESS) {
       DD_LOG(error) << getErrorString(result) << " failed to get display name!";
       return {};
