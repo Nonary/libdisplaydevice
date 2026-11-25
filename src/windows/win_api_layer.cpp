@@ -291,7 +291,6 @@ namespace display_device {
       auto detail_data {reinterpret_cast<SP_DEVICE_INTERFACE_DETAIL_DATA_W *>(buffer.data())};
       detail_data->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W);
 
-      check_display_query_stop();
       if (!SetupDiGetDeviceInterfaceDetailW(dev_info_handle, &dev_interface_data, detail_data, required_size_in_bytes, nullptr, &dev_info_data)) {
         DD_LOG(warning) << w_api.getErrorString(static_cast<LONG>(GetLastError())) << " \"SetupDiGetDeviceInterfaceDetailW\" failed.";
         return false;
@@ -318,7 +317,6 @@ namespace display_device {
       }
 
       instance_id.resize(required_size_in_characters);
-      check_display_query_stop();
       if (!SetupDiGetDeviceInstanceIdW(dev_info_handle, &dev_info_data, instance_id.data(), instance_id.size(), nullptr)) {
         DD_LOG(warning) << w_api.getErrorString(static_cast<LONG>(GetLastError())) << " \"SetupDiGetDeviceInstanceIdW\" failed.";
         return false;
@@ -351,7 +349,6 @@ namespace display_device {
         })
       };
 
-      check_display_query_stop();
       DWORD required_size_in_bytes {0};
       auto status {RegQueryValueExW(reg_key, L"EDID", nullptr, nullptr, nullptr, &required_size_in_bytes)};
       if (status == ERROR_FILE_NOT_FOUND || status == ERROR_PATH_NOT_FOUND) {
@@ -375,7 +372,6 @@ namespace display_device {
 
       edid.resize(required_size_in_bytes);
 
-      check_display_query_stop();
       status = RegQueryValueExW(reg_key, L"EDID", nullptr, nullptr, reinterpret_cast<LPBYTE>(edid.data()), &required_size_in_bytes);
       if (status == ERROR_FILE_NOT_FOUND || status == ERROR_PATH_NOT_FOUND) {
         DD_LOG(verbose) << "EDID registry value disappeared during read; proceeding without EDID.";
