@@ -63,7 +63,8 @@ namespace display_device {
       const bool is_active {win_utils::isActive(best_path)};
       const auto source_mode {is_active ? win_utils::getSourceMode(win_utils::getSourceIndex(best_path, display_data->m_modes), display_data->m_modes) : nullptr};
       const auto display_name {is_active ? m_w_api->getDisplayName(best_path) : std::string {}};  // Inactive devices can have multiple display names, so it's just meaningless use any
-      const auto edid {EdidData::parse(m_w_api->getEdid(best_path))};
+      // Inactive paths can expose malformed EDID on every enumeration.
+      const auto edid {EdidData::parse(m_w_api->getEdid(best_path), is_active)};
       std::vector<Rational> supported_refresh_rates;
       if (detail == DeviceEnumerationDetail::Full) {
         std::set<std::pair<unsigned int, unsigned int>> seen_rates;
