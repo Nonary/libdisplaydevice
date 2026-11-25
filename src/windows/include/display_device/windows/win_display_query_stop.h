@@ -12,7 +12,8 @@ namespace display_device {
   struct DisplayQueryStopped {};
 
   namespace detail {
-    inline thread_local std::stop_token display_query_stop;
+    // Nontrivial inline TLS initialization can emit duplicate MinGW symbols.
+    constinit inline thread_local const std::stop_token *display_query_stop = nullptr;
   }
 
   // Opt in only around a capture worker's display selection/open attempts.
@@ -20,19 +21,25 @@ namespace display_device {
   class DisplayQueryStopGuard {
    public:
     explicit DisplayQueryStopGuard(std::stop_token stop) noexcept:
-        m_previous(std::exchange(detail::display_query_stop, std::move(stop))) {}
+        m_stop(std::move(stop)),
+        m_previous(std::exchange(detail::display_query_stop, &m_stop)) {}
     DisplayQueryStopGuard(const DisplayQueryStopGuard &) = delete;
     DisplayQueryStopGuard &operator=(const DisplayQueryStopGuard &) = delete;
+    DisplayQueryStopGuard(DisplayQueryStopGuard &&) = delete;
+    DisplayQueryStopGuard &operator=(DisplayQueryStopGuard &&) = delete;
+
     ~DisplayQueryStopGuard() {
-      detail::display_query_stop = std::move(m_previous);
+      detail::display_query_stop = m_previous;
     }
 
    private:
-    std::stop_token m_previous;
+    std::stop_token m_stop;
+    const std::stop_token *m_previous;
   };
 
   inline void check_display_query_stop() {
-    if (detail::display_query_stop.stop_requested()) {
+    const auto *stop = detail::display_query_stop;
+    if (stop && stop->stop_requested()) {
       throw DisplayQueryStopped {};
     }
   }
@@ -47,8 +54,8 @@ namespace display_device {
 
   template<class Sleep>
   void wait_for_display_query_retry(std::chrono::milliseconds delay, Sleep sleep) {
-    const auto &stop = detail::display_query_stop;
-    if (!stop.stop_possible()) {
+    const auto *stop = detail::display_query_stop;
+    if (!stop || !stop->stop_possible()) {
       sleep(delay);
       return;
     }
@@ -56,7 +63,7 @@ namespace display_device {
     std::mutex mutex;
     std::unique_lock lock {mutex};
     std::condition_variable_any wake;
-    wake.wait_for(lock, stop, delay, [] { return false; });
+    wake.wait_for(lock, *stop, delay, [] { return false; });
     check_display_query_stop();
   }
 }  // namespace display_device
