@@ -46,3 +46,26 @@ TEST_S(InvalidManufacturerId, AboveLimit) {
 TEST_S(ValidOutput) {
   EXPECT_EQ(display_device::EdidData::parse(ut_consts::DEFAULT_EDID), ut_consts::DEFAULT_EDID_DATA);
 }
+
+TEST_S(QuietValidationPreservesParseResults) {
+  using display_device::EdidData;
+  using Level = display_device::Logger::LogLevel;
+
+  auto malformed_edid {ut_consts::DEFAULT_EDID};
+  // Keep the checksum valid but set the first manufacturer letter to zero.
+  malformed_edid[8] = std::byte {0x00};
+  malformed_edid[9] = std::byte {0x6D};
+
+  auto &logger {display_device::Logger::get()};
+  logger.setLogLevel(Level::verbose);
+  std::vector<Level> diagnostics;
+  logger.setCustomCallback([&diagnostics](Level level, const std::string &) {
+    diagnostics.push_back(level);
+  });
+
+  EXPECT_EQ(EdidData::parse(ut_consts::DEFAULT_EDID, false), ut_consts::DEFAULT_EDID_DATA);
+  EXPECT_EQ(EdidData::parse(malformed_edid, false), std::nullopt);
+  EXPECT_TRUE(diagnostics.empty());
+  EXPECT_EQ(EdidData::parse(malformed_edid), std::nullopt);
+  EXPECT_EQ(diagnostics, std::vector {Level::warning});
+}

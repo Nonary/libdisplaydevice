@@ -62,19 +62,27 @@ namespace display_device {
   }
 
   std::optional<EdidData> EdidData::parse(const std::vector<std::byte> &data) {
+    return parse(data, true);
+  }
+
+  std::optional<EdidData> EdidData::parse(const std::vector<std::byte> &data, const bool log_validation_failures) {
     if (data.empty()) {
       return std::nullopt;
     }
 
     if (data.size() < 128) {
-      DD_LOG(warning) << "EDID data size is too small: " << data.size();
+      if (log_validation_failures) {
+        DD_LOG(warning) << "EDID data size is too small: " << data.size();
+      }
       return std::nullopt;
     }
 
     // ---- Verify fixed header
     static const std::vector fixed_header {std::byte {0x00}, std::byte {0xFF}, std::byte {0xFF}, std::byte {0xFF}, std::byte {0xFF}, std::byte {0xFF}, std::byte {0xFF}, std::byte {0x00}};
     if (!std::equal(std::begin(fixed_header), std::end(fixed_header), std::begin(data))) {
-      DD_LOG(warning) << "EDID data does not contain fixed header.";
+      if (log_validation_failures) {
+        DD_LOG(warning) << "EDID data does not contain fixed header.";
+      }
       return std::nullopt;
     }
 
@@ -86,7 +94,9 @@ namespace display_device {
       }
 
       if (sum % 256 != 0) {
-        DD_LOG(warning) << "EDID checksum verification failed.";
+        if (log_validation_failures) {
+          DD_LOG(warning) << "EDID checksum verification failed.";
+        }
         return std::nullopt;
       }
     }
@@ -107,7 +117,9 @@ namespace display_device {
 
       for (const char ch : man_id) {
         if (ch < 'A' || ch > 'Z') {
-          DD_LOG(warning) << "EDID manufacturer id is out of range.";
+          if (log_validation_failures) {
+            DD_LOG(warning) << "EDID manufacturer id is out of range.";
+          }
           return std::nullopt;
         }
       }

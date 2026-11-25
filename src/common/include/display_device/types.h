@@ -80,6 +80,14 @@ namespace display_device {
     static std::optional<EdidData> parse(const std::vector<std::byte> &data);
 
     /**
+     * @brief Parse EDID data with optional warnings for malformed data.
+     * @param data Data to parse.
+     * @param log_validation_failures Whether to warn when validation fails.
+     * @return Parsed data or empty optional if failed to parse it.
+     */
+    static std::optional<EdidData> parse(const std::vector<std::byte> &data, bool log_validation_failures);
+
+    /**
      * @brief Comparator for strict equality.
      */
     friend bool operator==(const EdidData &lhs, const EdidData &rhs);
