@@ -30,33 +30,16 @@
 #include <dxgi1_2.h>
 #include <wrl/client.h>
 
-namespace {
-  thread_local display_device::DisplayRecoveryBehavior g_display_recovery_behavior = display_device::DisplayRecoveryBehavior::Automatic;
-}
-
 namespace display_device {
-  namespace detail {
-    DisplayRecoveryBehavior current_display_recovery_behavior() {
-      return g_display_recovery_behavior;
-    }
-
-    void set_display_recovery_behavior(DisplayRecoveryBehavior behavior) {
-      g_display_recovery_behavior = behavior;
-    }
-  }  // namespace detail
-
-  DisplayRecoveryBehaviorGuard::DisplayRecoveryBehaviorGuard(DisplayRecoveryBehavior behavior):
-      m_previous(detail::current_display_recovery_behavior()) {
-    detail::set_display_recovery_behavior(behavior);
-  }
-
-  DisplayRecoveryBehaviorGuard::~DisplayRecoveryBehaviorGuard() {
-    detail::set_display_recovery_behavior(m_previous);
-  }
-
   namespace {
     constexpr DWORD QUERY_ERROR_COOLDOWN_MS = 250;
     constexpr int MAX_TOPOLOGY_JOG_ATTEMPTS = 5;
+
+    void wait_for_query_retry(DWORD delay) {
+      wait_for_display_query_retry(std::chrono::milliseconds {delay}, [](auto timeout) {
+        ::Sleep(static_cast<DWORD>(timeout.count()));
+      });
+    }
 
     std::string queryTypeToString(QueryType type) {
       switch (type) {
@@ -275,6 +258,7 @@ namespace display_device {
       target_name.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
       target_name.header.size = sizeof(target_name);
 
+      check_display_query_stop();
       LONG result {DisplayConfigGetDeviceInfo(&target_name.header)};
       if (result != ERROR_SUCCESS) {
         DD_LOG(error) << w_api.getErrorString(result) << " failed to get target device name!";
@@ -290,6 +274,7 @@ namespace display_device {
      * @see getDeviceId implementation for more context regarding this madness.
      */
     bool getDeviceInterfaceDetail(const WinApiLayerInterface &w_api, HDEVINFO dev_info_handle, SP_DEVICE_INTERFACE_DATA &dev_interface_data, std::wstring &dev_interface_path, SP_DEVINFO_DATA &dev_info_data) {
+      check_display_query_stop();
       DWORD required_size_in_bytes {0};
       if (SetupDiGetDeviceInterfaceDetailW(dev_info_handle, &dev_interface_data, nullptr, 0, &required_size_in_bytes, nullptr)) {
         DD_LOG(error) << "\"SetupDiGetDeviceInterfaceDetailW\" did not fail, what?!";
@@ -321,6 +306,7 @@ namespace display_device {
      * @see getDeviceId implementation for more context regarding this madness.
      */
     bool getDeviceInstanceId(const WinApiLayerInterface &w_api, HDEVINFO dev_info_handle, SP_DEVINFO_DATA &dev_info_data, std::wstring &instance_id) {
+      check_display_query_stop();
       DWORD required_size_in_characters {0};
       if (SetupDiGetDeviceInstanceIdW(dev_info_handle, &dev_info_data, nullptr, 0, &required_size_in_characters)) {
         DD_LOG(error) << "\"SetupDiGetDeviceInstanceIdW\" did not fail, what?!";
@@ -346,6 +332,7 @@ namespace display_device {
      */
     bool getDeviceEdid(const WinApiLayerInterface &w_api, HDEVINFO dev_info_handle, SP_DEVINFO_DATA &dev_info_data, std::vector<std::byte> &edid) {
       // We could just directly open the registry key as the path is known, but we can also use the this
+      check_display_query_stop();
       HKEY reg_key {SetupDiOpenDevRegKey(dev_info_handle, &dev_info_data, DICS_FLAG_GLOBAL, 0, DIREG_DEV, KEY_READ)};
       if (reg_key == INVALID_HANDLE_VALUE) {
         DD_LOG(warning) << w_api.getErrorString(static_cast<LONG>(GetLastError())) << " \"SetupDiOpenDevRegKey\" failed; proceeding without EDID.";
@@ -409,6 +396,7 @@ namespace display_device {
     std::optional<std::tuple<std::wstring, std::vector<std::byte>>> getInstanceIdAndEdid(const WinApiLayerInterface &w_api, const std::wstring &device_path) {
       static const GUID monitor_guid {0xe6f07b5f, 0xee97, 0x4a90, {0xb0, 0x76, 0x33, 0xf5, 0x7b, 0xf4, 0xea, 0xa7}};
 
+      check_display_query_stop();
       HDEVINFO dev_info_handle {SetupDiGetClassDevsW(&monitor_guid, nullptr, nullptr, DIGCF_DEVICEINTERFACE)};
       if (dev_info_handle == INVALID_HANDLE_VALUE) {
         DD_LOG(warning) << w_api.getErrorString(static_cast<LONG>(GetLastError()))
@@ -427,6 +415,7 @@ namespace display_device {
         SP_DEVICE_INTERFACE_DATA dev_interface_data {};
         dev_interface_data.cbSize = sizeof(dev_interface_data);
         for (DWORD monitor_index = 0;; ++monitor_index) {
+          check_display_query_stop();
           if (!SetupDiEnumDeviceInterfaces(dev_info_handle, nullptr, &monitor_guid, monitor_index, &dev_interface_data)) {
             const DWORD error_code {GetLastError()};
             if (error_code == ERROR_NO_MORE_ITEMS) {
@@ -619,7 +608,9 @@ namespace display_device {
 
       // First get a baseline size
       UINT32 path_count = 0, mode_count = 0;
+      check_display_query_stop();
       LONG result = GetDisplayConfigBufferSizes(flags, &path_count, &mode_count);
+      check_display_query_stop();
       if (result != ERROR_SUCCESS) {
         if (use_virtual && (result == ERROR_NOT_SUPPORTED || result == ERROR_INVALID_PARAMETER)) {
           DD_LOG(debug) << getErrorString(result)
@@ -628,7 +619,7 @@ namespace display_device {
         }
         DD_LOG(error) << getErrorString(result) << " failed 'to get display buffer size's!";
         if (!recovery_skipped) {
-          ::Sleep(QUERY_ERROR_COOLDOWN_MS);
+          wait_for_query_retry(QUERY_ERROR_COOLDOWN_MS);
         }
         continue;
       }
@@ -654,14 +645,16 @@ namespace display_device {
         last_error = error;
         ++aggregated_failures;
         if (!recovery_skipped) {
-          ::Sleep(QUERY_ERROR_COOLDOWN_MS);
+          wait_for_query_retry(QUERY_ERROR_COOLDOWN_MS);
         }
       };
 
       for (int tries = 0; tries < max_tries; ++tries) {
         UINT32 pc = static_cast<UINT32>(paths.size());
         UINT32 mc = static_cast<UINT32>(modes.size());
+        check_display_query_stop();
         result = QueryDisplayConfig(flags, &pc, pc ? paths.data() : nullptr, &mc, mc ? modes.data() : nullptr, nullptr);
+        check_display_query_stop();
 
         if (result == ERROR_SUCCESS) {
           flush_failures();
@@ -692,7 +685,9 @@ namespace display_device {
 
           // If we didn't grow, topology might be flapping—recompute sizes once.
           if (!grew) {
+            check_display_query_stop();
             result = GetDisplayConfigBufferSizes(flags, &path_count, &mode_count);
+            check_display_query_stop();
             if (result != ERROR_SUCCESS) {
               break;
             }
@@ -707,7 +702,7 @@ namespace display_device {
           // Backoff (exponential, clamped)
           const DWORD delay = std::min<DWORD>(500, 25u * (1u << tries));
           if (!recovery_skipped) {
-            ::Sleep(delay);
+            wait_for_query_retry(delay);
           }
           continue;
         }
@@ -841,6 +836,7 @@ namespace display_device {
     target_name.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
     target_name.header.size = sizeof(target_name);
 
+    check_display_query_stop();
     LONG result {DisplayConfigGetDeviceInfo(&target_name.header)};
     if (result != ERROR_SUCCESS) {
       DD_LOG(error) << getErrorString(result) << " failed to get target device name!";
@@ -857,6 +853,7 @@ namespace display_device {
     source_name.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
     source_name.header.size = sizeof(source_name);
 
+    check_display_query_stop();
     LONG result {DisplayConfigGetDeviceInfo(&source_name.header)};
     if (result != ERROR_SUCCESS) {
       DD_LOG(error) << getErrorString(result) << " failed to get display name!";
